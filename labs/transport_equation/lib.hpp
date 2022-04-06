@@ -150,6 +150,36 @@ calc_err (const std::vector <T>& u_calc,
     return max_err;
 }
 
+template <typename T,
+          typename U_SOLVE>
+T
+calc_err_use_solve_func (const std::vector <T>& u,
+                         int num_points_coord_x,
+                         int num_points_time,
+                         double x_max,
+                         double t_max,
+                         U_SOLVE u_solve)
+{
+    const T dx = x_max / (num_points_coord_x - 1);
+    const T dt = t_max / (num_points_time - 1);
+
+    T max_err = 0;
+    for (int t_i = 0; t_i < num_points_time; ++t_i) {
+        std::size_t cur_shift = t_i * num_points_coord_x;
+
+        T t = t_i * dt;
+        for (int x_i = 0; x_i < num_points_coord_x; ++x_i) {
+            T x = x_i * dx;
+            T u_ref = u_solve (t, x);
+
+            T err = std::abs (u_ref - u[cur_shift + x_i]);
+            max_err = std::max (max_err, err);
+        }
+    }
+
+    return max_err;
+}
+
 //                        h      err
 std::vector <std::pair <double, double>>
 calc_h_err_vec (int num_points_coord_x_min,
@@ -159,19 +189,24 @@ calc_h_err_vec (int num_points_coord_x_min,
                 double x_max,
                 double t_max)
 {
-    std::vector <std::pair <double, double>> h_err (num_steps);
+    // u (t, x) = sin (x + t) - e^(xt)
+    auto u_solve = [] (double t, double x) {
+        return std::sin (x + t) - std::exp (x * t);
+    };
 
+    std::vector <std::pair <double, double>> h_err (num_steps);
     for (int step = 0; step < num_steps; ++step) {
         int num_points_coord_x =
             num_points_coord_x_min + num_points_coord_dx * step;
 
         auto u = solve_transport_eq (num_points_coord_x,
                                      num_points_time, x_max, t_max);
-        auto u_ref = get_solve_ref (num_points_coord_x,
-                                    num_points_time, x_max, t_max);
-        
+
         double h = x_max / (num_points_coord_x - 1);
-        double err = calc_err (u, u_ref);
+        double err = calc_err_use_solve_func (u, num_points_coord_x,
+                                              num_points_time, x_max, t_max,
+                                              u_solve);
+        
         h_err[step] = {h, err};
     }
 
