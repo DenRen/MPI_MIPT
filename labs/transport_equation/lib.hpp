@@ -47,7 +47,7 @@ calc_u (int num_points_coord_x,
             double u_k1_m = u_left;
 
             double x = x_i * dx;
-            double f_kh_mh = f (t, x);
+            double f_kh_mh = f (t + dt/2, x + dx/2);
 
             u_left = u[cur_pos + 1] = u_next (u_k_m, u_k_m1, u_k1_m, f_kh_mh);
         }

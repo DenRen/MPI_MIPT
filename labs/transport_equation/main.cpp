@@ -17,7 +17,7 @@ int main () {
     // std::cout << u << '\n';
     // std::cout << u_ref << '\n';
 
-    auto h_err = calc_h_err_vec (M, M / 4, 50, K, X_max, T_max);
+    auto h_err = calc_h_err_vec (M, M / 4, 20, K, X_max, T_max);
     for (auto[h, err] : h_err) {
         // std::cout << std::log (h) << ' ' << std::log (err) << '\n';
     }
