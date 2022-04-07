@@ -37,7 +37,7 @@ calc_u (int num_points_coord_x,
         std::size_t cur_shift = time_i * num_points_coord_x;
         std::size_t prev_shift = cur_shift - num_points_coord_x;
 
-        double u_left = u[cur_shift] = u_t_0 (0);
+        double u_left = u[cur_shift] = u_t_0 (t);
         for (int x_i = 0; x_i < num_points_coord_x - 1; ++x_i) {
             std::size_t prev_pos = prev_shift + x_i;
             std::size_t cur_pos = cur_shift + x_i;
@@ -47,7 +47,7 @@ calc_u (int num_points_coord_x,
             double u_k1_m = u_left;
 
             double x = x_i * dx;
-            double f_kh_mh = f (t + dt/2, x + dx/2);
+            double f_kh_mh = f (t - dt/2, x + dx/2);
 
             u_left = u[cur_pos + 1] = u_next (u_k_m, u_k_m1, u_k1_m, f_kh_mh);
         }
@@ -259,3 +259,34 @@ linearize (const std::vector <std::pair <T, T>>& x_y)
     
     return {k, b};
 }
+
+
+// #define ONLY_SOLVE
+
+void
+check_single_thread_solution () {
+    unsigned M = 800;       // coord
+    unsigned K = 1'000'000; // time
+
+    double X_max = 6;       // X_min = 0
+    double T_max = 6;       // T_min = 0
+
+
+#ifdef ONLY_SOLVE
+    auto u = solve_transport_eq (M, K, X_max, T_max);
+    { volatile double x = u[1]; }
+#else
+    auto h_err = calc_h_err_vec (M, M / 10, 3, K, X_max, T_max);
+    for (auto[h, err] : h_err) {
+        std::cout << std::log (h) << ' ' << std::log (err) << '\n';
+    }
+
+    for (auto&[h, err] : h_err) {
+        h = std::log (h);
+        err = std::log (err);
+    }
+    std::cout << "O(h^" << linearize (h_err).first << ")\n";
+#endif
+}
+
+#undef ONLY_SOLVE
