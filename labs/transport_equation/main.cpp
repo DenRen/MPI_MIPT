@@ -1,5 +1,5 @@
 #include <iostream>
-
+#include <mpi/mpi.h>
 #include "lib.hpp"
 /*
 
@@ -15,36 +15,30 @@
 
 */
 
-#define ONLY_SOLVE
+int main (int argc, char* argv[]) {
+// #define ONLY_SOLVE
+//     check_single_thread_solution ();
+// #undef ONLY_SOLVE
 
-void
-check_single_thread_solution () {
     unsigned M = 800;       // coord
     unsigned K = 1'000'000; // time
 
     double X_max = 6;       // X_min = 0
     double T_max = 6;       // T_min = 0
 
+    trans_eq_task_t task {M, K, X_max, T_max};
 
-#ifdef ONLY_SOLVE
-    auto u = solve_transport_eq (M, K, X_max, T_max);
-    { volatile double x = u[1]; }
-#else
-    auto h_err = calc_h_err_vec (M, M / 10, 3, K, X_max, T_max);
-    for (auto[h, err] : h_err) {
-        std::cout << std::log (h) << ' ' << std::log (err) << '\n';
-    }
+    solve_trans_eq_parallel (task, &argc, &argv);
 
-    for (auto&[h, err] : h_err) {
-        h = std::log (h);
-        err = std::log (err);
-    }
-    std::cout << "O(h^" << linearize (h_err).first << ")\n";
-#endif
-}
 
-#undef ONLY_SOLVE
-
-int main () {
-    check_single_thread_solution ();
+    /*
+    
+    Проблема: как передавать вычисленные блоки данных
+    Возможные решения:
+        1) Т.к. процесс с rank == 0 не передаёт свои блоки (все хранятся у него),
+        то можно осздать второй поток, который параллельно сделает все запросы на блоки
+        из других процессов. Но таких запросов м.б. очень много, поэтому появляется важная
+        задача это оптимизировать.
+        2) Представлять данные через MPI_Type_vector
+    */
 }
