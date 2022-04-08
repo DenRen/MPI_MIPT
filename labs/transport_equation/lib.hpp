@@ -489,14 +489,40 @@ copy_col_2_row (double* dst,
         dst[i++] = src[pos];
     }
 }
+
+template <typename T>
+T
+calc_end_index (T i_cur,
+                T step,
+                T i_end)
+{
+    if (i_cur + step >= i_end) {
+        return i_end;
+    }
+
+    return i_cur + step;
+}
+
+template <typename T>
+T
+calc_max_step (T i_cur,
+               T step,
+               T i_end)
+{
+    return calc_end_index (i_cur, step, i_end) - i_cur;
+}
+
 void
-solve_trans_eq_parallel_zero_rank (const trans_eq_task_t& task,
-                                   int num_chunk_area,
-                                   int num_threads,
-                                   std::vector <double>& u_buf)
+work_zero_rank_func_border (const trans_eq_task_t& task,
+                            int num_chunk_area,
+                            int num_threads,
+                            std::vector <double>& u_buf,
+                            std::vector <double>& u_t_buf)
 {
     int x_chunk_size = calc_chunk_size (task.x_size - 1, num_chunk_area);
     int t_chunk_size = calc_chunk_size (task.t_size - 1, num_chunk_area);
+
+    u_t_buf.resize (t_chunk_size);
 
     using funcs::u_0_x;
     using funcs::u_t_0;
@@ -524,51 +550,72 @@ solve_trans_eq_parallel_zero_rank (const trans_eq_task_t& task,
             0, 0, dx, dt,
             u_buf, f, u_next);
 
-    std::vector <double> u_t_buf (t_chunk_size);
-
     // Calc u right and up
     const int next_rank = 1, prev_rank = num_threads - 1;
     for (int i_chunk = 1; i_chunk < num_chunk_area; ++i_chunk) {
         // Fill u(t = 0, x)
         int x_i_min = i_chunk * x_chunk_size;   // x_min - is node
-        for (int x_i = x_i_min + 1; x_i <= x_i_min + x_chunk_size; ++x_i) {
+        int x_i_end = calc_end_index (x_i_min, x_chunk_size + 1, task.x_size);
+        for (int x_i = x_i_min + 1; x_i < x_i_end; ++x_i) {
             double x = x_i * dx;
             u_buf[x_i] = u_0_x (x);
         }
 
         // Calc u odd
-        calc_u (x_chunk_size + 1, t_chunk_size + 1,
+        int x_chunk_size_corrected = x_i_end - x_i_min;
+        calc_u (x_chunk_size_corrected, t_chunk_size + 1,
                 task.x_size,
                 x_i_min, 0, dx, dt,
                 u_buf, f, u_next);
 
         // Send up
         double* buf_odd_begin = u_buf.data () + (t_chunk_size - 1) * task.x_size + x_i_min;
-        MPI_Send (buf_odd_begin, x_chunk_size + 1,
+        MPI_Send (buf_odd_begin, x_chunk_size_corrected,
                   MPI_DOUBLE, next_rank, MPI_ANY_TAG, MPI_COMM_WORLD);
 
         // Fill u(t = 0, x)
-        int t_min = i_chunk * t_chunk_size;
-        for (int t_i = t_min + 1; t_i <= t_min + t_chunk_size; ++t_i) {
+        int t_i_min = i_chunk * t_chunk_size;
+        int t_i_end = calc_end_index (t_i_min, t_chunk_size + 1, task.t_size);
+        for (int t_i = t_i_min + 1; t_i < t_i_end; ++t_i) {
             double t = t_i * dt;
             u_buf[t_i * task.x_size] = u_t_0 (t);
         }
 
         // Calc u even
-        calc_u (x_chunk_size + 1, t_chunk_size + 1,
+        int t_chunk_size_corrected = t_i_end - t_i_min;
+        calc_u (x_chunk_size + 1, t_chunk_size_corrected,
                 task.x_size,
-                0, t_min, dx, dt,
+                0, t_i_min, dx, dt,
                 u_buf, f, u_next);
 
         // Copy to u_t_buf
         copy_row_2_col (u_t_buf.data (),
-                        u_buf.data () + (t_min + 1) * task.x_size + x_chunk_size,
-                        task.x_size, t_chunk_size);
+                        u_buf.data () + (t_i_min + 1) * task.x_size + x_chunk_size,
+                        task.x_size, t_chunk_size_corrected);
         // Send right
-        MPI_Send (u_t_buf.data (), t_chunk_size,
+        MPI_Send (u_t_buf.data (), t_chunk_size_corrected,
                   MPI_DOUBLE, next_rank, MPI_ANY_TAG, MPI_COMM_WORLD);
     }
     // Good. Todo: overbounds
+}
+
+void
+work_zero_rank_grid_border (const trans_eq_task_t& task,
+                            int num_chunk_area,
+                            int num_threads,
+                            std::vector <double>& u_buf,
+                            std::vector <double>& u_t_buf)
+{
+    int x_chunk_size = calc_chunk_size (task.x_size - 1, num_chunk_area);
+    int t_chunk_size = calc_chunk_size (task.t_size - 1, num_chunk_area);
+
+    u_t_buf.resize (t_chunk_size);
+
+    const int next_rank = 1, prev_rank = num_threads - 1;
+    auto[dx, dt] = task.calc_dx_dt ();
+
+    using funcs::f;
+    using funcs::u_next;
 
     // 2) Calc u, where need gridden border conditions
     // area - is set of chuks: |__
@@ -580,15 +627,22 @@ solve_trans_eq_parallel_zero_rank (const trans_eq_task_t& task,
         double* buf_begin = u_buf.data () + zero_pos;
 
         // Get x and t array from prev rank
-        MPI_Recv (buf_begin, x_chunk_size + 1, MPI_DOUBLE,
+
+        int x_i_end = calc_end_index (x_i_min, x_chunk_size + 1, task.x_size);
+        int t_i_end = calc_end_index (t_i_min, t_chunk_size + 1, task.t_size);
+        int x_chunk_size_corrected = x_i_end - x_i_min;
+        int t_chunk_size_corrected = t_i_end - t_i_min;
+
+        MPI_Recv (buf_begin, x_chunk_size_corrected, MPI_DOUBLE,
                   prev_rank, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-        MPI_Recv (u_t_buf.data (), t_chunk_size, MPI_DOUBLE,
+        MPI_Recv (u_t_buf.data (), t_chunk_size_corrected, MPI_DOUBLE,
                   prev_rank, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 
-        copy_row_2_col (buf_begin + task.x_size, u_t_buf.data (), task.x_size, t_chunk_size);
+        copy_row_2_col (buf_begin + task.x_size, u_t_buf.data (),
+                        task.x_size, t_chunk_size_corrected);
 
         // Calc zero area
-        calc_u (x_chunk_size + 1, t_chunk_size + 1,
+        calc_u (x_chunk_size_corrected, t_chunk_size_corrected,
                 task.x_size,
                 x_i_min, t_i_min, dx, dt,
                 u_buf, f, u_next);
@@ -598,38 +652,59 @@ solve_trans_eq_parallel_zero_rank (const trans_eq_task_t& task,
             double* buf_begin_odd  = buf_begin + i_chunk_l * x_chunk_size;
             double* buf_begin_even = buf_begin + i_chunk_l * task.x_size;
 
+            int x_i_odd_min = x_i_min + i_chunk_l * x_chunk_size;
+            int x_i_odd_end = calc_end_index (x_i_odd_min, x_chunk_size + 1, task.x_size);
+            int x_chunk_size_corrected = x_i_odd_end - x_i_odd_min;
+
             // Calc u odd
-            MPI_Recv (buf_begin_odd, x_chunk_size + 1, MPI_DOUBLE,
+            MPI_Recv (buf_begin_odd, x_chunk_size_corrected, MPI_DOUBLE,
                       prev_rank, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 
-            calc_u (x_chunk_size + 1, t_chunk_size + 1,
+            calc_u (x_chunk_size_corrected, t_chunk_size + 1,
                     task.x_size,
-                    x_i_min + i_chunk_l * x_chunk_size, t_i_min, dx, dt,
+                    x_i_odd_min, t_i_min, dx, dt,
                     u_buf, f, u_next);
 
             // Send up
-            MPI_Send (buf_begin_odd + t_chunk_size * task.x_size, x_chunk_size + 1,
+            MPI_Send (buf_begin_odd + t_chunk_size * task.x_size, x_chunk_size_corrected,
                       MPI_DOUBLE, next_rank, MPI_ANY_TAG, MPI_COMM_WORLD);
 
-            // Calc u even
-            MPI_Recv (u_t_buf.data (), t_chunk_size, MPI_DOUBLE,
-                      prev_rank, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-            copy_row_2_col (buf_begin_even + task.x_size, u_t_buf.data (), task.x_size, t_chunk_size);
+            int t_i_odd_min = t_i_min + i_chunk_l * t_chunk_size;
+            int t_i_odd_end = calc_end_index (t_i_odd_min, t_chunk_size + 1, task.t_size);
+            int t_chunk_size_corrected = t_i_odd_end - t_i_odd_min;
 
-            calc_u (x_chunk_size + 1, t_chunk_size + 1,
+            // Calc u even
+            MPI_Recv (u_t_buf.data (), t_chunk_size_corrected, MPI_DOUBLE,
+                      prev_rank, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+            copy_row_2_col (buf_begin_even + task.x_size, u_t_buf.data (),
+                            task.x_size, t_chunk_size_corrected);
+
+            calc_u (x_chunk_size + 1, t_chunk_size_corrected,
                     task.x_size,
                     x_i_min, t_i_min + i_chunk_l * t_chunk_size, dx, dt,
                     u_buf, f, u_next);
 
             // Send right
             copy_col_2_row (u_t_buf.data (), buf_begin_even + task.x_size + x_chunk_size,
-                            task.x_size, t_chunk_size);
-            MPI_Send (u_t_buf.data (), t_chunk_size,
+                            task.x_size, t_chunk_size_corrected);
+            MPI_Send (u_t_buf.data (), t_chunk_size_corrected,
                       MPI_DOUBLE, next_rank, MPI_ANY_TAG, MPI_COMM_WORLD);
         }
 
         // Get u_bufs from others process
     }
+}
+
+void
+solve_trans_eq_parallel_zero_rank (const trans_eq_task_t& task,
+                                   int num_chunk_area,
+                                   int num_threads,
+                                   std::vector <double>& u_buf)
+{
+
+    std::vector <double> u_t_buf;
+    work_zero_rank_func_border (task, num_chunk_area, num_threads, u_buf, u_t_buf);
+    work_zero_rank_grid_border (task, num_chunk_area, num_threads, u_buf, u_t_buf);
 }
 
 void
