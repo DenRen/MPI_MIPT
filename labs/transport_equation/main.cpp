@@ -30,7 +30,6 @@ int main (int argc, char* argv[]) {
 
     solve_trans_eq_parallel (task, &argc, &argv);
 
-
     /*
     
     Проблема: как передавать вычисленные блоки данных

@@ -444,6 +444,88 @@ calc_chunk_size (int full_size,
 }
 
 void
+solve_trans_eq_parallel_zero_rank (const trans_eq_task_t& task,
+                                   int num_chunk_area,
+                                   int num_threads,
+                                   std::vector <double>& u_buf)
+{
+    int x_chunk_size = calc_chunk_size (task.x_size, num_chunk_area);
+    int t_chunk_size = calc_chunk_size (task.t_size, num_chunk_area);
+
+    using funcs::u_0_x;
+    using funcs::u_t_0;
+    using funcs::f;
+    using funcs::u_next;
+
+    // int rank_next = ;
+    // int rank_prev = ;
+
+    // Fill u(t = 0, x)
+    // Fill u(t, x = 0)
+    // Calc u on (x_size - 1) * (t_size - 1)
+    for (int i_chunk = 1; i_chunk < num_chunk_area; ++i_chunk) {
+        // Calc u odd
+        // Send up
+        // Calc u even
+        // Send right
+    }
+
+    for (int i_area = num_threads; i_area < num_chunk_area; i_area += num_threads) {
+        // Get x and t array from prev rank
+        // Calc zero area
+
+        for (int i_chunk = 1 + i_area; i_chunk < num_chunk_area; ++i_chunk) {
+            // Calc u odd
+            // Send up
+            // Calc u even
+            // Send right
+        }
+
+        // Get u_bufs from others process
+    }
+}
+
+void
+solve_trans_eq_parallel_non_zero_rank (const trans_eq_task_t& task,
+                                       int num_chunk_area,
+                                       int num_threads,
+                                       int rank)
+{
+    assert (rank > 0);
+
+    int prev_rank = rank - 1;
+    int next_rank = rank == num_threads - 1 ? 0 : rank + 1;
+
+    int x_chunk_size = calc_chunk_size (task.x_size, num_chunk_area);
+    int t_chunk_size = calc_chunk_size (task.t_size, num_chunk_area);
+
+    using funcs::u_0_x;
+    using funcs::u_t_0;
+    using funcs::f;
+    using funcs::u_next;
+
+    std::vector <double> u_right_buf, u_up_buf, u_t_buf;
+
+    for (int i_area = rank; i_area < num_chunk_area; i_area += num_threads) {
+        // Get x and t array from prev rank
+        // Calc zero area
+
+        for (int i_chunk = 1 + i_area; i_chunk < num_chunk_area; ++i_chunk) {
+            // Get u(x) buttom
+            // Calc u_right
+            // Send u(x) top
+
+            // Get u(t) left
+            // Calc u_up
+            // Send u(t) right
+        }
+
+        // Convert u_right_buf to min size buf
+        // Send u_right_buf to process with rank 0
+    }
+}
+
+void
 solve_trans_eq_parallel (const trans_eq_task_t& task,
                          int* argc_ptr,
                          char** argv_ptr[])
@@ -453,24 +535,26 @@ solve_trans_eq_parallel (const trans_eq_task_t& task,
     int num_threads = 0, rank = 0;
     MPI_Comm_rank (MPI_COMM_WORLD, &rank);
     MPI_Comm_size (MPI_COMM_WORLD, &num_threads);
-    if (num_threads & 1) {
-        throw std::invalid_argument ("Number threads must be only EVEN");
-    }
+    // if (num_threads & 1) {
+    //     throw std::invalid_argument ("Number threads must be only EVEN");
+    // }
 
-    int x_chunk_size = calc_chunk_size (task.x_size, num_threads);
-    int t_chunk_size = calc_chunk_size (task.t_size, num_threads);
+    int k_zone = 4;
+    int num_chunk_area = num_threads * k_zone;
 
-
+    std::vector <double> u (task.t_size * task.x_size);
     if (rank == 0) {
-
-    }
-
-    if (rank & 1) {
-        // solve_trans_eq_parallel_odd (task, num_threads, rank);
+        solve_trans_eq_parallel_zero_rank (task, num_chunk_area, num_threads, u);
     } else {
-        solve_trans_eq_parallel_even (task, x_chunk_size, t_chunk_size,
-                                      num_threads, rank);
+
     }
+
+    // if (rank & 1) {
+    //     // solve_trans_eq_parallel_odd (task, num_threads, rank);
+    // } else {
+    //     solve_trans_eq_parallel_even (task, x_chunk_size, t_chunk_size,
+    //                                   num_threads, rank);
+    // }
 
     MPI_Finalize ();
 }
