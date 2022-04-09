@@ -542,7 +542,7 @@ work_zero_rank_func_border (const trans_eq_task_t& task,
                          u_buf, f, u_next);
 
         // Copy to u_t_buf
-        copy_row_2_col (u_t_buf.data (),
+        copy_col_2_row (u_t_buf.data (),
                         u_buf.data () + (t_i_min + 1) * task.x_size + x_chunk_size,
                         task.x_size, t_chunk_size_corrected);
         // Send right
@@ -637,7 +637,8 @@ work_zero_rank_grid_border (const trans_eq_task_t& task,
                              u_buf, f, u_next);
 
             // Send right
-            copy_col_2_row (u_t_buf.data (), buf_begin_even + task.x_size + x_chunk_size,
+            copy_col_2_row (u_t_buf.data (),
+                            buf_begin_even + task.x_size + x_chunk_size,
                             task.x_size, t_chunk_size_corrected);
             MPI_Send (u_t_buf.data (), t_chunk_size_corrected,
                       MPI_DOUBLE, next_rank, TAG_BORDER_COND, MPI_COMM_WORLD);
@@ -773,7 +774,8 @@ work_non_zero_rank_grid_border (const trans_eq_task_t& task,
                              u_buf_up, f, u_next);
 
             // Send right
-            copy_col_2_row (u_t_buf.data (), buf_begin_even + (x_chunk_size + 1) + x_chunk_size,
+            copy_col_2_row (u_t_buf.data (),
+                            buf_begin_even + (x_chunk_size + 1) + x_chunk_size,
                             task.x_size, t_chunk_size_corrected);
             MPI_Send (u_t_buf.data (), t_chunk_size_corrected,
                       MPI_DOUBLE, next_rank, TAG_BORDER_COND, MPI_COMM_WORLD);
