@@ -6,6 +6,7 @@
 #include <map>
 #include <set>
 #include <iterator>
+#include <iomanip>
 
 template <typename T>
 std::ostream&
@@ -182,4 +183,33 @@ operator << (std::ostream& os, const std::array <T, N>& arr) {
     }
 
     return os;
+}
+
+template <typename T>
+void
+print_2d_array (const T* begin,
+                std::size_t row_size,
+                std::size_t full_size)
+{
+    std::size_t col_size = full_size / row_size;
+
+    std::cout << std::fixed << std::setw (10) << std::setprecision (4);
+            //   << std::setfill ('0');  
+
+    for (std::size_t t = col_size - 1; t + 1 > 0; --t) {
+        std::cout << std::fixed << std::setw (10) << begin[t * row_size];
+        for (std::size_t x = 1; x < row_size; ++x) {
+            std::cout << ' ' << std::fixed << std::setw (10) << begin[x + t * row_size];
+        }
+        std::cout << '\n';
+    }
+    std::cout << '\n';
+}
+
+template <typename T>
+void
+print_2d_array (const std::vector <T>& vec,
+                std::size_t row_size)
+{
+    print_2d_array (vec.data (), row_size, vec.size ());
 }

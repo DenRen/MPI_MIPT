@@ -3,24 +3,6 @@
 
 template <typename T>
 void
-print_2d_array (const T* begin,
-                std::size_t row_size,
-                std::size_t full_size)
-{
-    std::size_t col_size = full_size / row_size;
-
-    for (std::size_t t = col_size - 1; t + 1 > 0; --t) {
-        std::cout << begin[t * row_size];
-        for (std::size_t x = 1; x < row_size; ++x) {
-            std::cout << ' ' << begin[x + t * row_size];
-        }
-        std::cout << '\n';
-    }
-    std::cout << '\n';
-}
-
-template <typename T>
-void
 print_2d_array (const std::vector <T>& vec,
                 std::size_t row_size)
 {
