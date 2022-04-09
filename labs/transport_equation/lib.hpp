@@ -625,8 +625,6 @@ work_zero_rank_grid_border (const trans_eq_task_t& task,
     }
 }
 
-
-
 // For zero rank
 void
 receive_u_bufs (const trans_eq_task_t& task,
@@ -649,26 +647,37 @@ receive_u_bufs (const trans_eq_task_t& task,
 
         // Receive right buffer
         int buf_right_x_size = task.x_size - i_area * x_chunk_size;
-        int buf_up_t_size    = task.t_size - i_area * t_chunk_size;
+        int buf_up_t_size    = task.t_size - (i_area + 1) * t_chunk_size;
         int x_i_min = i_area * x_chunk_size;
         int t_i_min = i_area * t_chunk_size;
 
         double* buf_right_begin = u_buf.data () + x_i_min + t_i_min * task.x_size;
         std::size_t buf_right_size = buf_right_x_size * (t_chunk_size + 1);
-        MPI_Recv (buf_right_begin, buf_right_size, MPI_DOUBLE, 
+        MPI_Recv (buf_right_begin, buf_right_size, MPI_DOUBLE,
                   source, TAG_SAVE_ON_HOST, MPI_COMM_WORLD, &status);
-        
-        assert (status.count_lo == buf_right_size);
+        {
+            int num_getted = -1;
+            MPI_Get_count (&status, MPI_DOUBLE, &num_getted);
+            assert (num_getted == buf_right_size);
+        }
 
         // Receive up buffer
         std::size_t buf_up_size = buf_up_t_size * (t_chunk_size + 1);
         tmp_buf_up.resize (buf_up_size);
         MPI_Recv (tmp_buf_up.data (), buf_up_size, MPI_DOUBLE,
                   source, TAG_SAVE_ON_HOST, MPI_COMM_WORLD, &status);
-        
-        assert (status.count_lo == buf_up_size);
 
+        {
+            int num_getted = -1;
+            MPI_Get_count (&status, MPI_DOUBLE, &num_getted);
+            assert (num_getted == buf_up_size);
+        }
 
+        double* buf_up_begin = buf_right_begin + t_chunk_size * task.x_size;
+        copy_row_2_rect (buf_up_begin, tmp_buf_up.data (),
+                         t_chunk_size + 1, task.x_size, tmp_buf_up.size ());
+
+        std::cout << "i_area " << i_area << " getted\n";
     }
 }
 
@@ -679,7 +688,7 @@ solve_trans_eq_parallel_zero_rank (const trans_eq_task_t& task,
                                    std::vector <double>& u_buf)
 {
     std::vector <double> u_t_buf;
-    
+
     auto compute_func = [&] {
         work_zero_rank_func_border (task, num_chunk_area, num_threads, u_buf, u_t_buf);
         work_zero_rank_grid_border (task, num_chunk_area, num_threads, u_buf, u_t_buf);
@@ -690,7 +699,7 @@ solve_trans_eq_parallel_zero_rank (const trans_eq_task_t& task,
     };
 
     std::thread compute_thread {compute_func};
-    std::thread bufferer_thread {compute_func};
+    std::thread bufferer_thread {bufferize_func};
 
     compute_thread.join ();
     bufferer_thread.join ();
@@ -747,6 +756,9 @@ work_non_zero_rank_grid_border (const trans_eq_task_t& task,
         std::copy_n (u_buf_right.cbegin () + t_chunk_size * buf_right_x_size,
                      x_chunk_size_corrected, u_buf_up.begin ());
 
+        buf_right_x_size = task.x_size;
+        buf_up_t_size = task.t_size;
+
         for (int i_chunk_g = 1 + i_area; i_chunk_g < num_chunk_area; ++i_chunk_g) {
             int i_chunk_l = i_chunk_g - i_area;
             double* buf_begin_odd  = u_buf_right.data () + i_chunk_l * x_chunk_size;
@@ -756,6 +768,14 @@ work_non_zero_rank_grid_border (const trans_eq_task_t& task,
             int x_i_odd_min = x_i_min + i_chunk_l * x_chunk_size;
             int x_i_odd_end = calc_end_index (x_i_odd_min, x_chunk_size + 1, task.x_size);
             int x_chunk_size_corrected = x_i_odd_end - x_i_odd_min;
+
+
+            // Resize buffers
+            buf_right_x_size -= num_threads * x_chunk_size;
+            buf_up_t_size -= num_threads * t_chunk_size;
+
+            u_buf_right.resize (buf_right_x_size * (t_chunk_size + 1));
+            u_buf_up.resize (buf_up_t_size * (x_chunk_size + 1));
 
             // Calc u odd
             MPI_Recv (buf_begin_odd, x_chunk_size_corrected, MPI_DOUBLE,
@@ -801,12 +821,6 @@ work_non_zero_rank_grid_border (const trans_eq_task_t& task,
         MPI_Send (u_buf_up.data (), u_buf_up.size (), MPI_DOUBLE,
                   0, TAG_SAVE_ON_HOST, MPI_COMM_WORLD);
 
-        // Resize buffers
-        buf_right_x_size -= num_threads * x_chunk_size;
-        buf_up_t_size -= num_threads * t_chunk_size;
-
-        u_buf_right.resize (buf_right_x_size * (t_chunk_size + 1));
-        u_buf_up.resize (buf_up_t_size * (x_chunk_size + 1));
     }
 }
 
