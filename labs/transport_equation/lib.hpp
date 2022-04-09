@@ -5,8 +5,9 @@
 #include <thread>
 #include <mpi/mpi.h>
 
-#include "print_lib.hpp"
+#include "copy_transform.hpp"
 #include "func_lib.hpp"
+#include "print_lib.hpp"
 
 #define HOST
 
@@ -419,30 +420,6 @@ calc_chunk_size (int full_size,
            (full_size % num_chunks != 0);
 }
 
-void
-copy_row_2_col (double* dst_col,
-                const double* src_row,
-                int row_size,
-                int num)
-{
-    for (int i_row = 0; i_row < num; ++i_row) {
-        *dst_col = src_row[i_row];
-        dst_col += row_size;
-    }
-}
-
-void
-copy_col_2_row (double* dst_row,
-                double* src_col,
-                int row_size,
-                int num)
-{
-    for (int i_row = 0; i_row < num; ++i_row) {
-        dst_row[i_row] = *src_col;
-        src_col += row_size;
-    }
-}
-
 template <typename T>
 T
 calc_end_index (T i_cur,
@@ -648,6 +625,8 @@ work_zero_rank_grid_border (const trans_eq_task_t& task,
     }
 }
 
+
+
 // For zero rank
 void
 receive_u_bufs (const trans_eq_task_t& task,
@@ -655,7 +634,42 @@ receive_u_bufs (const trans_eq_task_t& task,
                 int num_threads,
                 std::vector <double>& u_buf)
 {
-    
+    const int x_chunk_size = calc_chunk_size (task.x_size - 1, num_chunk_area);
+    const int t_chunk_size = calc_chunk_size (task.t_size - 1, num_chunk_area);
+
+    std::vector <double> tmp_buf_up;
+
+    MPI_Status status = {};
+    for (int i_area = 1; i_area < num_chunk_area; ++i_area) {
+        if (i_area % num_threads == 0) {
+            continue;
+        }
+
+        int source = i_area % num_threads;
+
+        // Receive right buffer
+        int buf_right_x_size = task.x_size - i_area * x_chunk_size;
+        int buf_up_t_size    = task.t_size - i_area * t_chunk_size;
+        int x_i_min = i_area * x_chunk_size;
+        int t_i_min = i_area * t_chunk_size;
+
+        double* buf_right_begin = u_buf.data () + x_i_min + t_i_min * task.x_size;
+        std::size_t buf_right_size = buf_right_x_size * (t_chunk_size + 1);
+        MPI_Recv (buf_right_begin, buf_right_size, MPI_DOUBLE, 
+                  source, TAG_SAVE_ON_HOST, MPI_COMM_WORLD, &status);
+        
+        assert (status.count_lo == buf_right_size);
+
+        // Receive up buffer
+        std::size_t buf_up_size = buf_up_t_size * (t_chunk_size + 1);
+        tmp_buf_up.resize (buf_up_size);
+        MPI_Recv (tmp_buf_up.data (), buf_up_size, MPI_DOUBLE,
+                  source, TAG_SAVE_ON_HOST, MPI_COMM_WORLD, &status);
+        
+        assert (status.count_lo == buf_up_size);
+
+
+    }
 }
 
 void

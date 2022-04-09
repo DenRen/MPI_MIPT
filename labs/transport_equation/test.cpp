@@ -19,7 +19,15 @@ print_2d_array (const T* begin,
     std::cout << '\n';
 }
 
-TEST (ROW_COL, STATIC) {
+template <typename T>
+void
+print_2d_array (const std::vector <T>& vec,
+                std::size_t row_size)
+{
+    print_2d_array (vec.data (), row_size, vec.size ());
+}
+
+TEST (COPY_ROW_2_COL, STATIC) {
     int x_size = 10, t_size = 15;
     std::vector <double> v (x_size * t_size);
 
@@ -36,7 +44,7 @@ TEST (ROW_COL, STATIC) {
     }
 }
 
-TEST (COL_ROW, STATIC) {
+TEST (COPY_COL_2_ROW, STATIC) {
     int x_size = 10, t_size = 15;
     std::vector <double> v (x_size * t_size);
 
@@ -50,5 +58,35 @@ TEST (COL_ROW, STATIC) {
 
     for (int i = 0; i < x_size; ++i) {
         ASSERT_EQ (v[i], i + 1);
+    }
+}
+
+TEST (COPY_ROW_2_RECT, STATIC) {
+    int u_buf_x_size = 15;
+    int u_buf_t_size = 20;
+
+    int row_buf_size = 16;
+
+    std::vector <double> u_buf (u_buf_x_size * u_buf_t_size);
+    std::vector <double> row_buf (row_buf_size);
+
+    for (int i = 0; i < row_buf.size (); ++i) {
+        row_buf[i] = i + 1;
+    }
+
+    // print_2d_array (u_buf, u_buf_x_size);
+    
+    double* dest = u_buf.data () + u_buf_x_size + 2;
+    const int width = 8;
+
+    copy_row_2_rect (dest, row_buf.data (), width, u_buf_x_size, row_buf.size ());
+    
+    // print_2d_array (u_buf, u_buf_x_size);
+
+    for (int i_row = 0; i_row < row_buf.size () / width; ++i_row) {
+        double* begin = dest + i_row * u_buf_x_size;
+        for (int i_col = 0; i_col < width; ++i_col) {
+            ASSERT_EQ (begin[i_col], 1 + i_col + i_row * width);
+        }
     }
 }
