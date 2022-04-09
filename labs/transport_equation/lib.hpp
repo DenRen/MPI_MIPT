@@ -3,6 +3,7 @@
 #include <cassert>
 #include <algorithm>
 #include <thread>
+#include <mpi/mpi.h>
 
 #include "print_lib.hpp"
 #include "func_lib.hpp"
@@ -419,26 +420,26 @@ calc_chunk_size (int full_size,
 }
 
 void
-copy_row_2_col (double* dst,
-                double* src,
+copy_row_2_col (double* dst_col,
+                const double* src_row,
                 int row_size,
                 int num)
 {
-    std::size_t end_pos = num * row_size, i = 0;
-    for (std::size_t pos = 0; pos < end_pos; pos += row_size) {
-        dst[pos] = src[i++];
+    for (int i_row = 0; i_row < num; ++i_row) {
+        *dst_col = src_row[i_row];
+        dst_col += row_size;
     }
 }
 
 void
-copy_col_2_row (double* dst,
-                double* src,
+copy_col_2_row (double* dst_row,
+                double* src_col,
                 int row_size,
                 int num)
 {
-    std::size_t end_pos = num * row_size, i = 0;
-    for (std::size_t pos = 0; pos < end_pos; pos += row_size) {
-        dst[i++] = src[pos];
+    for (int i_row = 0; i_row < num; ++i_row) {
+        dst_row[i_row] = *src_col;
+        src_col += row_size;
     }
 }
 
@@ -471,10 +472,10 @@ work_zero_rank_func_border (const trans_eq_task_t& task,
                             std::vector <double>& u_buf,
                             std::vector <double>& u_t_buf)
 {
-    int x_chunk_size = calc_chunk_size (task.x_size - 1, num_chunk_area);
-    int t_chunk_size = calc_chunk_size (task.t_size - 1, num_chunk_area);
+    const int x_chunk_size = calc_chunk_size (task.x_size - 1, num_chunk_area);
+    const int t_chunk_size = calc_chunk_size (task.t_size - 1, num_chunk_area);
 
-    u_t_buf.resize (t_chunk_size);
+    u_t_buf.resize (t_chunk_size + 1);
 
     using funcs::u_0_x;
     using funcs::u_t_0;
@@ -695,7 +696,8 @@ work_non_zero_rank_grid_border (const trans_eq_task_t& task,
                          u_buf_up (buf_up_t_size * (x_chunk_size + 1)),
                          u_t_buf (t_chunk_size + 1);
 
-    const int next_rank = 1, prev_rank = num_threads - 1;
+    const int next_rank = rank == num_threads - 1 ? 0 : rank - 1;
+    const int prev_rank = rank - 1;
     auto[dx, dt] = task.calc_dx_dt ();
 
     using funcs::f;
@@ -719,7 +721,7 @@ work_non_zero_rank_grid_border (const trans_eq_task_t& task,
                   prev_rank, TAG_BORDER_COND, MPI_COMM_WORLD, &status);
 
         copy_row_2_col (u_buf_right.data () + buf_right_x_size, u_t_buf.data (),
-                        task.x_size, t_chunk_size_corrected);
+                        buf_right_x_size, t_chunk_size_corrected);
 
         // Calc zero area
         calc_u_part_buf (x_chunk_size_corrected, t_chunk_size_corrected,
@@ -775,7 +777,6 @@ work_non_zero_rank_grid_border (const trans_eq_task_t& task,
                             task.x_size, t_chunk_size_corrected);
             MPI_Send (u_t_buf.data (), t_chunk_size_corrected,
                       MPI_DOUBLE, next_rank, TAG_BORDER_COND, MPI_COMM_WORLD);
-
         }
 
         // Send u_buf_right and u_buf_up to process with rank 0
@@ -817,7 +818,7 @@ solve_trans_eq_parallel (const trans_eq_task_t& task,
         throw std::invalid_argument ("Number threads must be more one");
     }
 
-    int k_zone = 4;
+    int k_zone = 4/4;
     int num_chunk_area = num_threads * k_zone;
 
     std::vector <double> u (task.t_size * task.x_size);

@@ -11,7 +11,7 @@ LD  = mpic++
 RM = rm -rf
 
 # OPTIM_FLAGS = -O3 -lm
-# GTEST_FLAGS = -lgtest -lgtest_main -pthread
+GTEST_FLAGS = -lgtest -lgtest_main -pthread
 DEBUG_FLAGS = -g3
 SANITISE_FLAGS = -fsanitize=address -fsanitize=undefined -D_GLIBCXX_DEBUG -static-libasan
 OTHER_FLAGS = -std=c++17 -MD -pthread

@@ -20,8 +20,8 @@ int main (int argc, char* argv[]) {
 //     check_single_thread_solution ();
 // #undef ONLY_SOLVE
 
-    unsigned M = 1024;       // coord
-    unsigned K = 4096; // time
+    unsigned M = 1025; // coord
+    unsigned K = 1025; // time
 
     double X_max = 6;       // X_min = 0
     double T_max = 6;       // T_min = 0
