@@ -531,7 +531,7 @@ work_zero_rank_func_border (const trans_eq_task_t& task,
     }
     // Good. Todo: overbounds
 } // void work_zero_rank_func_border
-
+#include <unistd.h>
 void
 work_zero_rank_grid_border (const trans_eq_task_t& task,
                             int num_chunk_area,
@@ -565,6 +565,7 @@ work_zero_rank_grid_border (const trans_eq_task_t& task,
         int x_chunk_size_corrected = x_i_end - x_i_min;
         int t_chunk_size_corrected = t_i_end - t_i_min;
 
+        sleep (1);
         MPI_Recv (buf_begin - task.x_size - 1, x_chunk_size_corrected + 1,
                   MPI_DOUBLE, prev_rank, TAG_BORDER_COND, MPI_COMM_WORLD, &status);
         MPI_Recv (u_t_buf.data (), t_chunk_size_corrected,
@@ -624,7 +625,7 @@ work_zero_rank_grid_border (const trans_eq_task_t& task,
                       MPI_DOUBLE, next_rank, TAG_BORDER_COND, MPI_COMM_WORLD);
         }
     }
-}
+} // void work_zero_rank_grid_border
 
 // For zero rank
 void
@@ -657,14 +658,16 @@ receive_u_bufs (const trans_eq_task_t& task,
         double* buf_right_begin = u_buf.data () + x_i_min + t_i_min * task.x_size;
         std::size_t buf_right_size = buf_right_x_size * t_chunk_size_corrected;
         tmp_buf_right.resize (buf_right_size);
+        std::cout << "host, want get buf_right_size: " << buf_right_size << '\n';
         MPI_Recv (tmp_buf_right.data (), tmp_buf_right.size (),
                   MPI_DOUBLE, source, TAG_SAVE_ON_HOST, MPI_COMM_WORLD, &status);
-        copy_row_2_rect (buf_right_begin, tmp_buf_right.data (),//
+        copy_row_2_rect (buf_right_begin, tmp_buf_right.data (),
                          buf_right_x_size, task.x_size, tmp_buf_right.size ());
 
         // Receive up buffer
         std::size_t buf_up_size = buf_up_t_size * t_chunk_size;
         tmp_buf_up.resize (buf_up_size);
+        std::cout << "host, want get tmp_buf_up.size (): " << tmp_buf_up.size () << std::endl;
         MPI_Recv (tmp_buf_up.data (), buf_up_size,
                   MPI_DOUBLE, source, TAG_SAVE_ON_HOST, MPI_COMM_WORLD, &status);
 
@@ -672,7 +675,7 @@ receive_u_bufs (const trans_eq_task_t& task,
         copy_row_2_rect (buf_up_begin, tmp_buf_up.data (),
                          t_chunk_size, task.x_size, tmp_buf_up.size ());
     }
-}
+} // void receive_u_bufs
 
 void
 solve_trans_eq_parallel_zero_rank (const trans_eq_task_t& task,
@@ -696,7 +699,7 @@ solve_trans_eq_parallel_zero_rank (const trans_eq_task_t& task,
 
     compute_thread.join ();
     bufferer_thread.join ();
-}
+} // void solve_trans_eq_parallel_zero_rank
 
 void
 work_non_zero_rank_grid_border (const trans_eq_task_t& task,
@@ -728,7 +731,6 @@ work_non_zero_rank_grid_border (const trans_eq_task_t& task,
         int t_i_end = calc_end_index (t_i_min, t_chunk_size, task.t_size);
         int x_chunk_size_corrected = x_i_end - x_i_min;
         int t_chunk_size_corrected = t_i_end - t_i_min;
-        // DUMP (t_chunk_size_corrected);
 
         u_t_buf.resize (t_chunk_size_corrected);
         u_buf_right.resize (buf_right_x_size * (t_chunk_size_corrected + 1));
@@ -741,6 +743,7 @@ work_non_zero_rank_grid_border (const trans_eq_task_t& task,
         copy_row_2_col (u_buf_right.data () + buf_right_x_size, u_t_buf.data (),
                         buf_right_x_size, t_chunk_size_corrected);
 
+        print_2d_array (u_buf_right, buf_right_x_size);
         // Calc zero area
         calc_u_part_buf (x_chunk_size_corrected + 1, t_chunk_size_corrected + 1,
                          buf_right_x_size,
@@ -802,16 +805,16 @@ work_non_zero_rank_grid_border (const trans_eq_task_t& task,
                       MPI_DOUBLE, next_rank, TAG_BORDER_COND, MPI_COMM_WORLD);
         }
 
-        // print_2d_array (u_buf_right, x_chunk_size_corrected + 1);
         // Send u_buf_right and u_buf_up to process with rank 0
-        // DUMP (u_buf_right.size ());
         remove_left_down_bound (u_buf_right, buf_right_x_size);
-        // DUMP (u_buf_right.size ());
+        std::cout << "host, want send u_buf_right.size (): " << u_buf_right.size () << '\n';
         MPI_Send (u_buf_right.data (), u_buf_right.size (),
                   MPI_DOUBLE, 0, TAG_SAVE_ON_HOST, MPI_COMM_WORLD);
+
         if (u_buf_up.size () != 0) {
             remove_left_down_bound (u_buf_up, x_chunk_size + 1);
         }
+        std::cout << "host, want send u_buf_up.size (): " << u_buf_up.size () << '\n';
         MPI_Send (u_buf_up.data (), u_buf_up.size (),
                   MPI_DOUBLE, 0, TAG_SAVE_ON_HOST, MPI_COMM_WORLD);
     }
@@ -825,7 +828,7 @@ solve_trans_eq_parallel_non_zero_rank (const trans_eq_task_t& task,
 {
     assert (rank > 0);
     work_non_zero_rank_grid_border (task, rank, num_chunk_area, num_threads);
-}
+} // void solve_trans_eq_parallel_non_zero_rank
 
 void
 solve_trans_eq_parallel (const trans_eq_task_t& task,
@@ -838,8 +841,8 @@ solve_trans_eq_parallel (const trans_eq_task_t& task,
     MPI_Comm_rank (MPI_COMM_WORLD, &rank);
     MPI_Comm_size (MPI_COMM_WORLD, &num_threads);
 
-    int k_zone = 4/4;
-    int num_chunk_area = num_threads * k_zone;
+    int k_zone = 2;
+    int num_chunk_area = num_threads == 1 ? 1 : num_threads * k_zone;
 
     if (rank == 0) {
         std::vector <double> u (task.t_size * task.x_size);
@@ -851,7 +854,7 @@ solve_trans_eq_parallel (const trans_eq_task_t& task,
     }
 
     MPI_Finalize ();
-}
+} // void solve_trans_eq_parallel
 
 /*
 b solve_trans_eq_parallel_zero_rank
@@ -859,3 +862,57 @@ b work_non_zero_rank_grid_border
 r
 
 */
+
+// todo: struct
+// todo: func 3 arrays
+
+struct trans_eq_solver {
+    struct area_manager {
+        int x_size;
+        int t_size;
+        int num_threads;
+        int num_area;
+
+        area_manager (int x_size,
+                      int t_size,
+                      int num_threads,
+                      int num_area) :
+            x_size (x_size),
+            t_size (t_size),
+            num_threads (num_threads),
+            num_area (num_area)
+        {
+            if (x_size <= 1 || t_size <= 1 || num_threads <= 0 ||
+                num_area < num_threads) {
+                throw std::invalid_argument ("Incorrect params");
+            }
+        }
+
+        struct area_params_t {
+            int x_chunk_size, t_chunk_size;
+            int x_i_min, t_i_min;
+            int x_i_end, t_i_end;
+
+            int
+            
+        };
+
+        area_params_t
+        get_area_params (int i_area) const noexcept {
+            assert (i_area >= 0);
+
+            area_params_t params = {};
+
+            params.x_chunk_size = calc_chunk_size (x_size, num_area);
+            params.t_chunk_size = calc_chunk_size (t_size, num_area);
+
+            params.x_i_min = i_area * params.x_chunk_size;
+            params.t_i_min = i_area * params.t_chunk_size;
+
+            params.x_i_end = x_size;
+            params.t_i_end = t_size;
+
+            return params;
+        }
+    };
+};

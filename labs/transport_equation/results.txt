@@ -1,0 +1,15 @@
+/bin/time -f "%e" mpirun -n 1 ./main.out > r
+6.81
+
+/bin/time -f "%e" mpirun -n 2 ./main.out > r_m
+7.05
+
+/bin/time -f "%e" mpirun -n 3 ./main.out > r_m
+
+7.81
+/bin/time -f "%e" mpirun -n 4 ./main.out > r_m
+9.22
+
+/bin/time -f "%e" mpirun -n 10 ./main.out > r_m
+33.81
+
