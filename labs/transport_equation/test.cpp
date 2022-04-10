@@ -1,14 +1,6 @@
 #include <gtest/gtest.h>
 #include "lib.hpp"
 
-template <typename T>
-void
-print_2d_array (const std::vector <T>& vec,
-                std::size_t row_size)
-{
-    print_2d_array (vec.data (), row_size, vec.size ());
-}
-
 TEST (COPY_ROW_2_COL, STATIC) {
     int x_size = 10, t_size = 15;
     std::vector <double> v (x_size * t_size);
@@ -71,4 +63,29 @@ TEST (COPY_ROW_2_RECT, STATIC) {
             ASSERT_EQ (begin[i_col], 1 + i_col + i_row * width);
         }
     }
+}
+
+TEST (CALC_END_INDEX, STATIC) {
+    ASSERT_EQ (calc_end_index ( 0, 4,  5), 4);
+    ASSERT_EQ (calc_end_index (10, 4, 13), 13);
+    ASSERT_EQ (calc_end_index (10, 4, 14), 14);
+    ASSERT_EQ (calc_end_index (10, 4, 15), 14);
+    ASSERT_EQ (calc_end_index (10, 4, 5),  5);
+}
+
+TEST (REMOVE_LEFT_DOWN_BOUND, STATIC) {
+    std::vector <double> v = {
+         1,  2,  3,  4,  5,
+         6,  7,  8,  9, 10,
+        11, 12, 13, 14, 15
+    };
+
+    remove_left_down_bound (v, 5);
+
+    std::vector <double> v_ref = {
+        7,  8,  9, 10,
+        12, 13, 14, 15,
+    };
+
+    ASSERT_EQ (v, v_ref);
 }

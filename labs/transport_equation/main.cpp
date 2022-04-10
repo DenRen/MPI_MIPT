@@ -20,11 +20,11 @@ int main (int argc, char* argv[]) {
 //     check_single_thread_solution ();
 // #undef ONLY_SOLVE
 
-    unsigned M = 11; // coord
-    unsigned K = 11; // time
+    unsigned M = 5; // coord
+    unsigned K = 5; // time
 
-    double X_max = 0.6;       // X_min = 0
-    double T_max = 0.6;       // T_min = 0
+    double X_max = 2;       // X_min = 0
+    double T_max = 2;       // T_min = 0
 
     trans_eq_task_t task {M, K, X_max, T_max};
 

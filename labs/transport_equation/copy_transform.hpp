@@ -56,3 +56,18 @@ copy_row_2_rect (T* dst_rect,
         std::copy_n (src_begin, width, dst_begin);
     }
 }
+
+template <typename T>
+void
+remove_left_down_bound (std::vector <T>& vec,
+                        std::size_t row_size)
+{
+    T* dst = vec.data ();
+    const std::size_t num_rows = vec.size () / row_size;
+    for (std::size_t i_row = 1; i_row < num_rows; ++i_row) {
+        T* src = vec.data () + i_row * row_size + 1;
+        std::copy_n (src, row_size - 1, dst);
+        dst += row_size - 1;
+    }
+    vec.resize (dst - vec.data ());
+}
