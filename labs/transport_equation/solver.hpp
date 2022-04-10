@@ -33,7 +33,7 @@ struct area_params_t {
     }
 
     int
-    get_zero_right_rect_size () const noexcept {
+    get_zero_and_right_rect_size () const noexcept {
         return get_t_zero_chunk_size () * (x_i_end - zero_rect.x_i_min);
     }
 
@@ -63,7 +63,7 @@ struct area_params_t {
         }
 
         return right_rect;
-    }
+    } // rect_t get_right_rect (int i_chunk)
 
     rect_t
     get_up_rect (int i_chunk) const noexcept {
@@ -80,7 +80,7 @@ struct area_params_t {
         }
 
         return up_rect;
-    }
+    } // rect_t get_up_rect (int i_chunk)
 }; // struct area_params_t
 
 struct map_manager_t {
@@ -191,7 +191,7 @@ struct trans_eq_solver {
         } else {
             calc_non_zero_rank_grid_border (rank);
         }
-    }
+    } // void solve
 
     void
     calc_zero_rank_func_border () {
@@ -228,7 +228,7 @@ struct trans_eq_solver {
                 u_buf[x_i] = funcs::u_0_x (x);
             }
 
-            // Calc u odd
+            // Calc right rect u
             double* u_buf_right_begin = u_buf.data () + rect_right.x_i_min;
             calc_u_rect (u_buf_right_begin, u_buf_x_size,
                          rect_right,
@@ -246,7 +246,7 @@ struct trans_eq_solver {
                 u_buf[t_i * u_buf_x_size] = funcs::u_t_0 (t);
             }
 
-            // Calc u even
+            // Calc up rect u
             double* u_buf_up_begin = u_buf.data () + rect_up.t_i_min * u_buf_x_size;
             calc_u_rect (u_buf_up_begin, u_buf_x_size,
                          rect_up,
@@ -262,54 +262,131 @@ struct trans_eq_solver {
             MPI_Send (u_t_buf.data (), rect_up.t_chunk_size,
                       MPI_DOUBLE, next_rank, TAG_BORDER_COND, MPI_COMM_WORLD);
         }
-    }
+    } // void calc_zero_rank_func_border ()
 
     void
     calc_zero_rank_grid_border () {
+        const auto[dx, dt] = map_mgr.calc_dx_dt ();
+        std::size_t u_buf_x_size = map_mgr.x_size;
+        std::vector <double> u_t_buf, u_x_buf;
 
-    }
+        const int next_rank = 1, prev_rank = map_mgr.num_threads - 1;
+
+        // 2) Calc u, where need gridden border conditions
+        // area - is set of chuks: |__
+        MPI_Status status = {};
+        for (int i_area = map_mgr.num_threads;
+             i_area < map_mgr.num_areas;
+             i_area += map_mgr.num_threads)
+        {
+            const area_params_t area_params = map_mgr.get_area_params (i_area);
+            const rect_t& zero_rect = area_params.zero_rect;
+
+            u_t_buf.resize (area_params.zero_rect.t_chunk_size);
+            u_x_buf.resize (area_params.zero_rect.x_chunk_size + 1);
+
+            std::size_t zero_pos = zero_rect.t_i_min * u_buf_x_size + zero_rect.x_i_min;
+            double* u_buf_begin = u_buf.data () + zero_pos;
+
+            // Get x and t array from prev rank
+            MPI_Recv (u_x_buf.data (), u_x_buf.size (),
+                      MPI_DOUBLE, prev_rank, TAG_BORDER_COND, MPI_COMM_WORLD, &status);
+            MPI_Recv (u_t_buf.data (), u_t_buf.size (),
+                      MPI_DOUBLE, prev_rank, TAG_BORDER_COND, MPI_COMM_WORLD, &status);
+
+            // Calc zero area
+            calc_u_rect_x_row_t_col (u_buf_begin, u_x_buf.data (), u_t_buf.data (),
+                                     u_buf_x_size, area_params.zero_rect,
+                                     funcs::f, funcs::u_next);
+
+            for (int i_chunk_g = 1 + i_area; i_chunk_g < num_chunk_area; ++i_chunk_g) {
+                int i_chunk_l = i_chunk_g - i_area;
+                double* buf_begin_odd  = u_buf_begin + i_chunk_l * x_chunk_size;
+                double* buf_begin_even = u_buf_begin + i_chunk_l * task.x_size;
+
+                int x_i_odd_min = x_i_min + i_chunk_l * x_chunk_size;
+                int x_i_odd_end = calc_end_index (x_i_odd_min, x_chunk_size, task.x_size);
+                int x_chunk_size_corrected = x_i_odd_end - x_i_odd_min;
+
+                // Calc u odd
+                MPI_Recv (buf_begin_odd - task.x_size - 1, x_chunk_size_corrected + 1,
+                        MPI_DOUBLE, prev_rank, TAG_BORDER_COND, MPI_COMM_WORLD, &status);
+
+                calc_u_full_buf (x_chunk_size_corrected + 1, t_chunk_size + 1,
+                                task.x_size,
+                                x_i_odd_min - 1 , t_i_min - 1, dx, dt,
+                                u_buf, f, u_next);
+
+                // Send up
+                MPI_Send (buf_begin_odd + (t_chunk_size - 1) * task.x_size - 1, x_chunk_size_corrected + 1,
+                        MPI_DOUBLE, next_rank, TAG_BORDER_COND, MPI_COMM_WORLD);
+
+                int t_i_odd_min = t_i_min + i_chunk_l * t_chunk_size;
+                int t_i_odd_end = calc_end_index (t_i_odd_min, t_chunk_size, task.t_size);
+                int t_chunk_size_corrected = t_i_odd_end - t_i_odd_min;
+
+                // Calc u even
+                MPI_Recv (u_t_buf.data (), t_chunk_size_corrected, MPI_DOUBLE,
+                        prev_rank, TAG_BORDER_COND, MPI_COMM_WORLD, &status);
+                copy_row_2_col (buf_begin_even - 1, u_t_buf.data (),
+                                task.x_size, t_chunk_size_corrected);
+
+                calc_u_full_buf (x_chunk_size + 1, t_chunk_size_corrected + 1,
+                                task.x_size,
+                                x_i_min - 1, t_i_odd_min - 1, dx, dt,
+                                u_buf, f, u_next);
+
+                // Send right
+                copy_col_2_row (u_t_buf.data (),
+                                buf_begin_even + x_chunk_size - 1,
+                                task.x_size, t_chunk_size_corrected);
+                MPI_Send (u_t_buf.data (), t_chunk_size_corrected,
+                        MPI_DOUBLE, next_rank, TAG_BORDER_COND, MPI_COMM_WORLD);
+            }
+        }
+    } // void calc_zero_rank_grid_border ()
 
     void
     calc_non_zero_rank_grid_border (int rank) {
 
-    }
+    } // void calc_non_zero_rank_grid_border (int rank)
 
     void
     receive_u_bufs () {
 
-    }
+    } // void receive_u_bufs ()
 
     template <typename T, typename F, typename U_next>
     void
-    calc_u_rect (T* u_buf,
-                 const T* u_x_buf,
-                 const T* u_t_buf,
-                 std::size_t u_buf_x_size,
-                 std::size_t x_i_min,
-                 std::size_t t_i_min,
-                 std::size_t x_size_calc,
-                 std::size_t t_size_calc,
-                 F f,
-                 U_next u_next)
+    calc_u_rect_x_row_t_col (T* u_buf,
+                             const T* u_x_buf,
+                             const T* u_t_buf,
+                             std::size_t u_buf_x_size,
+                             std::size_t x_i_min,
+                             std::size_t t_i_min,
+                             std::size_t x_size_calc,
+                             std::size_t t_size_calc,
+                             F f,
+                             U_next u_next)
     {
         // todo
-    }
+    } // void calc_u_rect_x_row_t_col (T* u_buf, ..., U_next u_next)
 
     template <typename T, typename F, typename U_next>
     void
-    calc_u_rect (T* u_buf,
-                 const T* u_x_buf,
-                 const T* u_t_buf,
-                 std::size_t u_buf_x_size,
-                 const rect_t& rect_calc,
-                 F f,
-                 U_next u_next)
+    calc_u_rect_x_row_t_col (T* u_buf,
+                             const T* u_x_buf,
+                             const T* u_t_buf,
+                             std::size_t u_buf_x_size,
+                             const rect_t& rect_calc,
+                             F f,
+                             U_next u_next)
     {
-        calc_u_rect (u_buf, u_x_buf, u_t_buf, u_buf_x_size,
-                     rect_calc.x_i_min, rect_calc.t_i_min,
-                     rect_calc.x_chunk_size, rect_calc.t_chunk_size,
-                     f, u_next);
-    }
+        calc_u_rect_x_row_t_col (u_buf, u_x_buf, u_t_buf, u_buf_x_size,
+                                 rect_calc.x_i_min, rect_calc.t_i_min,
+                                 rect_calc.x_chunk_size, rect_calc.t_chunk_size,
+                                 f, u_next);
+    } // void calc_u_rect_x_row_t_col (T* u_buf, ..., const rect_t& rect_calc, ..., U_next u_next)
 
     template <typename T, typename F, typename U_next>
     void
@@ -324,7 +401,7 @@ struct trans_eq_solver {
                        U_next u_next)
     {
         // todo
-    }
+    } // void calc_u_rect_x_row (T* u_buf, ..., U_next u_next)
 
     template <typename T, typename F, typename U_next>
     void
@@ -339,7 +416,7 @@ struct trans_eq_solver {
                            rect_calc.x_i_min, rect_calc.t_i_min,
                            rect_calc.x_chunk_size, rect_calc.t_chunk_size,
                            f, u_next);
-    }
+    } // void calc_u_rect_x_row (T* u_buf, ..., const rect_t& rect_calc, ..., U_next u_next)
 
     template <typename T, typename F, typename U_next>
     void
@@ -354,7 +431,7 @@ struct trans_eq_solver {
                        U_next u_next)
     {
         // todo
-    }
+    } // void calc_u_rect_t_col (T* u_buf, ..., U_next u_next)
 
     template <typename T, typename F, typename U_next>
     void
@@ -369,7 +446,7 @@ struct trans_eq_solver {
                            rect_calc.x_i_min, rect_calc.t_i_min,
                            rect_calc.x_chunk_size, rect_calc.t_chunk_size,
                            f, u_next);
-    }
+    } // void calc_u_rect_t_col (T* u_buf, ..., const rect_t& rect_calc, ..., U_next u_next)
 
     template <typename T, typename F, typename U_next>
     void
@@ -383,7 +460,7 @@ struct trans_eq_solver {
                  U_next u_next)
     {
         // todo
-    }
+    } // void calc_u_rect (T* u_buf, ..., U_next u_next)
 
     template <typename T, typename F, typename U_next>
     void
@@ -397,7 +474,7 @@ struct trans_eq_solver {
                      rect_calc.x_i_min, rect_calc.t_i_min,
                      rect_calc.x_chunk_size, rect_calc.t_chunk_size,
                      f, u_next);
-    }
+    } // void calc_u_rect (T* u_buf, ..., const rect_t& rect_calc, ..., U_next u_next)
 
 }; // struct trans_eq_solver
 
