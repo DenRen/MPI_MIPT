@@ -524,13 +524,13 @@ work_zero_rank_func_border (const trans_eq_task_t& task,
         copy_col_2_row (u_t_buf.data (),
                         u_buf.data () + t_i_min * task.x_size + x_chunk_size - 1,
                         task.x_size, t_chunk_size_corrected);
-        print_2d_array (u_buf, task.x_size);
+        // print_2d_array (u_buf, task.x_size);
         // Send right
         MPI_Send (u_t_buf.data (), t_chunk_size_corrected,
                   MPI_DOUBLE, next_rank, TAG_BORDER_COND, MPI_COMM_WORLD);
     }
     // Good. Todo: overbounds
-}
+} // void work_zero_rank_func_border
 
 void
 work_zero_rank_grid_border (const trans_eq_task_t& task,
@@ -706,7 +706,7 @@ work_non_zero_rank_grid_border (const trans_eq_task_t& task,
 {
     int x_chunk_size = calc_chunk_size (task.x_size, num_chunk_area);
     int t_chunk_size = calc_chunk_size (task.t_size, num_chunk_area);
-    const int next_rank = rank == num_threads - 1 ? 0 : rank - 1;
+    const int next_rank = rank == num_threads - 1 ? 0 : rank + 1;
     const int prev_rank = rank - 1;
     auto[dx, dt] = task.calc_dx_dt ();
 
@@ -728,6 +728,7 @@ work_non_zero_rank_grid_border (const trans_eq_task_t& task,
         int t_i_end = calc_end_index (t_i_min, t_chunk_size, task.t_size);
         int x_chunk_size_corrected = x_i_end - x_i_min;
         int t_chunk_size_corrected = t_i_end - t_i_min;
+        // DUMP (t_chunk_size_corrected);
 
         u_t_buf.resize (t_chunk_size_corrected);
         u_buf_right.resize (buf_right_x_size * (t_chunk_size_corrected + 1));
@@ -803,9 +804,9 @@ work_non_zero_rank_grid_border (const trans_eq_task_t& task,
 
         // print_2d_array (u_buf_right, x_chunk_size_corrected + 1);
         // Send u_buf_right and u_buf_up to process with rank 0
-        DUMP (u_buf_right.size ());
+        // DUMP (u_buf_right.size ());
         remove_left_down_bound (u_buf_right, buf_right_x_size);
-        DUMP (u_buf_right.size ());
+        // DUMP (u_buf_right.size ());
         MPI_Send (u_buf_right.data (), u_buf_right.size (),
                   MPI_DOUBLE, 0, TAG_SAVE_ON_HOST, MPI_COMM_WORLD);
         if (u_buf_up.size () != 0) {
@@ -814,7 +815,7 @@ work_non_zero_rank_grid_border (const trans_eq_task_t& task,
         MPI_Send (u_buf_up.data (), u_buf_up.size (),
                   MPI_DOUBLE, 0, TAG_SAVE_ON_HOST, MPI_COMM_WORLD);
     }
-}
+} // void work_non_zero_rank_grid_border
 
 void
 solve_trans_eq_parallel_non_zero_rank (const trans_eq_task_t& task,
