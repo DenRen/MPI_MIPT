@@ -3,8 +3,18 @@
 namespace treq {
 
 struct rect_t {
-    int x_chunk_size, t_chunk_size;
     int x_i_min, t_i_min;
+    int x_chunk_size, t_chunk_size;
+
+    int
+    get_x_i_end () const noexcept {
+        return x_i_min + x_chunk_size;
+    }
+
+    int
+    get_t_i_end () const noexcept {
+        return t_i_min + t_chunk_size;
+    }
 }; // struct rect_t
 
 struct area_params_t {
@@ -37,11 +47,12 @@ struct area_params_t {
         }
     }
 
-    area_params_t
+    rect_t
     get_right_rect (int i_chunk) const noexcept {
-        rect_t right_rect = {};
-        right_rect.x_i_min = zero_rect.x_i_min + i_chunk * zero_rect.x_chunk_size;
-        right_rect.t_i_min = zero_rect.t_i_min + i_chunk * zero_rect.t_chunk_size;
+        rect_t right_rect = {
+            .x_i_min = zero_rect.x_i_min + i_chunk * zero_rect.x_chunk_size,
+            .t_i_min = zero_rect.t_i_min
+        };
 
         if (right_rect.x_i_min + zero_rect.x_chunk_size > x_i_end) {
             right_rect.x_chunk_size = x_i_end - right_rect.x_i_min;
@@ -50,6 +61,25 @@ struct area_params_t {
             right_rect.x_chunk_size = zero_rect.x_chunk_size;
             right_rect.t_chunk_size = zero_rect.t_chunk_size;
         }
+
+        return right_rect;
+    }
+
+    rect_t
+    get_up_rect (int i_chunk) const noexcept {
+        rect_t up_rect = {
+            .x_i_min = zero_rect.x_i_min,
+            .t_i_min = zero_rect.t_i_min + i_chunk * zero_rect.t_chunk_size,
+            .x_chunk_size = zero_rect.x_chunk_size
+        };
+
+        if (up_rect.t_i_min + zero_rect.t_chunk_size > t_i_end) {
+            up_rect.t_chunk_size = t_i_end - up_rect.t_i_min;
+        } else {
+            up_rect.t_chunk_size = zero_rect.t_chunk_size;
+        }
+
+        return up_rect;
     }
 }; // struct area_params_t
 
@@ -132,14 +162,32 @@ struct map_manager_t {
 }; // struct map_manager_t
 
 struct trans_eq_solver {
-
+    const map_manager_t map_mgr;
     std::vector <double> u_buf;
+
+    trans_eq_solver (const trans_eq_task_t& task,
+                     int num_threads,
+                     int koef_mult_threads) :
+        map_mgr (task, num_threads, koef_mult_threads * num_threads)
+    {}
 
     void
     solve (int rank) {
         if (rank == 0) {
-            calc_zero_rank_func_border ();
-            calc_zero_rank_grid_border ();
+            auto compute_func = [&] {
+                calc_zero_rank_func_border ();
+                calc_zero_rank_grid_border ();
+            };
+
+            auto bufferize_func = [&] {
+                receive_u_bufs ();
+            };
+
+            std::thread compute_thread {compute_func};
+            std::thread bufferer_thread {bufferize_func};
+
+            compute_thread.join ();
+            bufferer_thread.join ();
         } else {
             calc_non_zero_rank_grid_border (rank);
         }
@@ -147,25 +195,73 @@ struct trans_eq_solver {
 
     void
     calc_zero_rank_func_border () {
-        // fill U (x_min, [t_min, t_min + dt * t_chuck_size])
-        // fill U (t_min, [x_min, x_min + dx * x_chuck_size])
-        // calc U ([x_min, x_min + dx * x_chuck_size],
-        //         [t_min, t_min + dt * t_chuck_size])
+        const area_params_t area_params = map_mgr.get_area_params (0);
+        const auto[dx, dt] = map_mgr.calc_dx_dt ();
+        std::size_t u_buf_x_size = map_mgr.x_size;
+        std::vector <double> u_t_buf;
 
-        /*
-        double x_right_min, t_right_min;
-        double x_up_min, t_up_min;
-
-        for (int i_area = 1; i_area < map_mgr.num_area; ++i_area) {
-            fill U (t, [x])
-            calc U_right
-            send up of U_right
-
-            fill U (x, [t])
-            calc U_up
-            send right of U_up
+        // 1) Calc u, where need only functional border conditions
+        // Fill u(t = 0, x)
+        for (int x_i = 0; x_i < area_params.get_x_zero_chunk_size (); ++x_i) {
+            double x = x_i * dx;
+            u_buf[x_i] = funcs::u_0_x (x);
         }
-        */
+
+        // Fill u(t, x = 0)
+        for (int t_i = 1; t_i < area_params.get_t_zero_chunk_size (); ++t_i) {
+            double t = t_i * dt;
+            u_buf[t_i * u_buf_x_size] = funcs::u_t_0 (t);
+        }
+
+        // Calc u on (x_size - 1) * (t_size - 1)
+        calc_u_rect (u_buf.data (), u_buf_x_size,
+                     area_params.zero_rect,
+                     funcs::f, funcs::u_next);
+
+        // Calc u rights and ups in zero area
+        const int next_rank = 1, prev_rank = map_mgr.num_threads - 1;
+        for (int i_chunk = 1; i_chunk < map_mgr.num_areas; ++i_chunk) {
+            // Fill u(t = 0, x)
+            const rect_t rect_right = area_params.get_right_rect (i_chunk);
+            for (int x_i = rect_right.x_i_min; x_i < rect_right.get_x_i_end (); ++x_i) {
+                double x = x_i * dx;
+                u_buf[x_i] = funcs::u_0_x (x);
+            }
+
+            // Calc u odd
+            double* u_buf_right_begin = u_buf.data () + rect_right.x_i_min;
+            calc_u_rect (u_buf_right_begin, u_buf_x_size,
+                         rect_right,
+                         funcs::f, funcs::u_next);
+
+            // Send up
+            MPI_Send (u_buf_right_begin + (rect_right.t_chunk_size - 1) * u_buf_x_size - 1,
+                      rect_right.x_chunk_size + 1,
+                      MPI_DOUBLE, next_rank, TAG_BORDER_COND, MPI_COMM_WORLD);
+
+            // Fill u(t = 0, x)
+            const rect_t rect_up = area_params.get_up_rect (i_chunk);
+            for (int t_i = rect_up.t_i_min; t_i < rect_up.get_t_i_end (); ++t_i) {
+                double t = t_i * dt;
+                u_buf[t_i * u_buf_x_size] = funcs::u_t_0 (t);
+            }
+
+            // Calc u even
+            double* u_buf_up_begin = u_buf.data () + rect_up.t_i_min * u_buf_x_size;
+            calc_u_rect (u_buf_up_begin, u_buf_x_size,
+                         rect_up,
+                         funcs::f, funcs::u_next);
+
+            // Copy to u_t_buf
+            u_t_buf.resize (rect_up.t_chunk_size);
+            copy_col_2_row (u_t_buf.data (),
+                            u_buf_up_begin + rect_up.x_chunk_size - 1,
+                            u_buf_x_size, rect_up.t_chunk_size);
+            // print_2d_array (u_buf, task.x_size);
+            // Send right
+            MPI_Send (u_t_buf.data (), rect_up.t_chunk_size,
+                      MPI_DOUBLE, next_rank, TAG_BORDER_COND, MPI_COMM_WORLD);
+        }
     }
 
     void
@@ -178,13 +274,10 @@ struct trans_eq_solver {
 
     }
 
-    const map_manager_t map_mgr;
+    void
+    receive_u_bufs () {
 
-    trans_eq_solver (const trans_eq_task_t& task,
-                     int num_threads,
-                     int koef_mult_threads) :
-        map_mgr (task, num_threads, koef_mult_threads * num_threads)
-    {}
+    }
 
     template <typename T, typename F, typename U_next>
     void
