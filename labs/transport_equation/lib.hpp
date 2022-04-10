@@ -20,7 +20,9 @@
 struct trans_eq_task_t {
     int x_size;     // Number points of x coordinate
     int t_size;     // Number points of time
+    double x_min = 0;
     double x_max;   // x coord belongs to [0, x_max]
+    double t_min = 0;
     double t_max;   // time belongs to [0, t_max]
 
     void check_valid () const
@@ -80,7 +82,7 @@ check_error (int err_code, int line, const char* file_name) {
 }
 
 template <typename U_T_0, typename U_0_X, typename F,
-          typename U_NEXT>
+          typename U_next>
 std::vector <double>
 calc_u (int num_points_coord_x,
         int num_points_time,
@@ -89,7 +91,7 @@ calc_u (int num_points_coord_x,
         U_T_0 u_t_0,
         U_0_X u_0_x,
         F f,
-        U_NEXT u_next)
+        U_next u_next)
 {
     std::vector <double> u (num_points_time * num_points_coord_x);
 
@@ -124,7 +126,7 @@ calc_u (int num_points_coord_x,
     return u;
 }
 
-template <typename F, typename U_NEXT>
+template <typename F, typename U_next>
 void
 calc_u_part_buf (int x_chunk_size,
                  int t_chunk_size,
@@ -134,7 +136,7 @@ calc_u_part_buf (int x_chunk_size,
                  double dx, double dt,
                  std::vector <double>& u_buf,
                  F f,
-                 U_NEXT u_next)
+                 U_next u_next)
 {
     std::size_t buf_offset = (x_i_min - x_arr_begin) + (t_i_min - t_arr_begin) * buf_x_size;
 
@@ -161,7 +163,7 @@ calc_u_part_buf (int x_chunk_size,
     }
 }
 
-template <typename F, typename U_NEXT>
+template <typename F, typename U_next>
 void
 calc_u_full_buf (int x_chunk_size,
                  int t_chunk_size,
@@ -170,13 +172,13 @@ calc_u_full_buf (int x_chunk_size,
                  double dx, double dt,
                  std::vector <double>& u_buf,
                  F f,
-                 U_NEXT u_next)
+                 U_next u_next)
 {
     calc_u_part_buf (x_chunk_size, t_chunk_size, buf_x_size,
                      0, 0, x_min, t_min, dx, dt, u_buf, f, u_next);
 }
 
-template <typename F, typename U_NEXT>
+template <typename F, typename U_next>
 void
 calc_u (int x_size,
         int t_size,
@@ -184,7 +186,7 @@ calc_u (int x_size,
         double dx, double dt,
         std::vector <double>& u_buf,
         F f,
-        U_NEXT u_next)
+        U_next u_next)
 {
     return calc_u_full_buf (x_size, t_size, x_size, 0,
                             x_min, t_min, dx, dt, u_buf, f, u_next);
@@ -865,54 +867,3 @@ r
 
 // todo: struct
 // todo: func 3 arrays
-
-struct trans_eq_solver {
-    struct area_manager {
-        int x_size;
-        int t_size;
-        int num_threads;
-        int num_area;
-
-        area_manager (int x_size,
-                      int t_size,
-                      int num_threads,
-                      int num_area) :
-            x_size (x_size),
-            t_size (t_size),
-            num_threads (num_threads),
-            num_area (num_area)
-        {
-            if (x_size <= 1 || t_size <= 1 || num_threads <= 0 ||
-                num_area < num_threads) {
-                throw std::invalid_argument ("Incorrect params");
-            }
-        }
-
-        struct area_params_t {
-            int x_chunk_size, t_chunk_size;
-            int x_i_min, t_i_min;
-            int x_i_end, t_i_end;
-
-            int
-            
-        };
-
-        area_params_t
-        get_area_params (int i_area) const noexcept {
-            assert (i_area >= 0);
-
-            area_params_t params = {};
-
-            params.x_chunk_size = calc_chunk_size (x_size, num_area);
-            params.t_chunk_size = calc_chunk_size (t_size, num_area);
-
-            params.x_i_min = i_area * params.x_chunk_size;
-            params.t_i_min = i_area * params.t_chunk_size;
-
-            params.x_i_end = x_size;
-            params.t_i_end = t_size;
-
-            return params;
-        }
-    };
-};
