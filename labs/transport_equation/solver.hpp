@@ -34,12 +34,12 @@ struct area_params_t {
     int x_i_end, t_i_end;
 
     int
-    get_x_zero_chunk_size () const noexcept {
+    get_zero_chunk_x_size () const noexcept {
         return std::min (x_i_end - zero_rect.x_i_min, zero_rect.x_chunk_size);
     }
 
     int
-    get_t_zero_chunk_size () const noexcept {
+    get_zero_chunk_t_size () const noexcept {
         return std::min (t_i_end - zero_rect.t_i_min, zero_rect.t_chunk_size);
     }
 
@@ -50,7 +50,7 @@ struct area_params_t {
 
     int
     get_zero_and_right_rect_size () const noexcept {
-        return get_t_zero_chunk_size () * get_zero_and_right_rect_x_size ();
+        return get_zero_chunk_t_size () * get_zero_and_right_rect_x_size ();
     }
 
     int
@@ -68,19 +68,19 @@ struct area_params_t {
         }
     }
 
+    // This rectangle is assumed to exist, otherwise UB
     rect_t
     get_right_rect (int i_chunk) const noexcept {
         rect_t right_rect = {
             .x_i_min = zero_rect.x_i_min + i_chunk * zero_rect.x_chunk_size,
-            .t_i_min = zero_rect.t_i_min
+            .t_i_min = zero_rect.t_i_min,
+            .t_chunk_size = zero_rect.t_chunk_size
         };
 
         if (right_rect.x_i_min + zero_rect.x_chunk_size > x_i_end) {
             right_rect.x_chunk_size = x_i_end - right_rect.x_i_min;
-            right_rect.t_chunk_size = t_i_end - right_rect.t_i_min;
         } else {
             right_rect.x_chunk_size = zero_rect.x_chunk_size;
-            right_rect.t_chunk_size = zero_rect.t_chunk_size;
         }
 
         return right_rect;
@@ -117,13 +117,13 @@ struct map_manager_t {
     int num_areas;
 
     map_manager_t (int x_size,
-                    int t_size,
-                    double x_min,
-                    double x_max,
-                    double t_min,
-                    double t_max,
-                    int num_threads,
-                    int num_areas) :
+                   int t_size,
+                   double x_min,
+                   double x_max,
+                   double t_min,
+                   double t_max,
+                   int num_threads,
+                   int num_areas) :
         x_size (x_size),
         t_size (t_size),
         x_min (x_min),
@@ -140,12 +140,12 @@ struct map_manager_t {
     }
 
     map_manager_t (const trans_eq_task_t& task,
-                    int num_threads,
-                    int num_areas) :
+                   int num_threads,
+                   int num_areas) :
         map_manager_t (task.x_size, task.t_size,
-                        task.x_min, task.x_max,
-                        task.t_min, task.x_max,
-                        num_threads, num_areas)
+                       task.x_min, task.x_max,
+                       task.t_min, task.x_max,
+                       num_threads, num_areas)
     {}
 
     area_params_t
@@ -153,12 +153,24 @@ struct map_manager_t {
         assert (i_area >= 0);
 
         area_params_t params = {};
+        rect_t& zero_rect = params.zero_rect;
 
-        params.zero_rect.x_chunk_size = calc_chunk_size (x_size, num_areas);
-        params.zero_rect.t_chunk_size = calc_chunk_size (t_size, num_areas);
+        int x_chunk_size = calc_chunk_size (x_size, num_areas);
+        int t_chunk_size = calc_chunk_size (t_size, num_areas);
 
-        params.zero_rect.x_i_min = i_area * params.zero_rect.x_chunk_size;
-        params.zero_rect.t_i_min = i_area * params.zero_rect.t_chunk_size;
+        zero_rect.x_chunk_size = calc_chunk_size (x_size, num_areas);
+        zero_rect.t_chunk_size = calc_chunk_size (t_size, num_areas);
+        
+        zero_rect.x_i_min = i_area * x_chunk_size;
+        zero_rect.t_i_min = i_area * t_chunk_size;
+
+        if (x_chunk_size + zero_rect.x_i_min <= x_size) {
+            zero_rect.x_chunk_size = x_chunk_size;
+            zero_rect.t_chunk_size = t_chunk_size;
+        } else {
+            zero_rect.x_chunk_size = x_size - zero_rect.x_i_min;
+            zero_rect.t_chunk_size = t_size - zero_rect.t_i_min;
+        }
 
         params.x_i_end = x_size;
         params.t_i_end = t_size;
@@ -223,13 +235,13 @@ struct trans_eq_solver {
 
         // 1) Calc u, where need only functional border conditions
         // Fill u(t = 0, x)
-        for (int x_i = 0; x_i < area_params.get_x_zero_chunk_size (); ++x_i) {
+        for (int x_i = 0; x_i < area_params.get_zero_chunk_x_size (); ++x_i) {
             double x = x_i * dx;
             u_buf[x_i] = funcs::u_0_x (x);
         }
 
         // Fill u(t, x = 0)
-        for (int t_i = 1; t_i < area_params.get_t_zero_chunk_size (); ++t_i) {
+        for (int t_i = 1; t_i < area_params.get_zero_chunk_t_size (); ++t_i) {
             double t = t_i * dt;
             u_buf[t_i * u_buf_x_size] = funcs::u_t_0 (t);
         }
