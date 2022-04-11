@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "solver.hpp"
+#include "lib.hpp"
 
 TEST (COPY_ROW_2_COL, STATIC) {
     int x_size = 10, t_size = 15;

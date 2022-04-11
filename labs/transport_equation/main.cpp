@@ -20,8 +20,8 @@ int main (int argc, char* argv[]) {
 //     check_single_thread_solution ();
 // #undef ONLY_SOLVE
 
-    unsigned M = 10; // coord
-    unsigned K = 10; // time
+    int M = 15; // coord
+    int K = 15; // time
 
     double X_max = 2;       // X_min = 0
     double T_max = 2;       // T_min = 0
@@ -40,9 +40,11 @@ int main (int argc, char* argv[]) {
     // }
     // MPI_Finalize ();
 
+#if 1
     solve_trans_eq_parallel (task, &argc, &argv);
-
-    // auto u = solve_transport_eq (M, K, X_max, T_max);
+#else
+    auto u = solve_transport_eq (M, K, X_max, T_max);
     // { volatile double x = u[1]; }
-    // print_2d_array (u.data (), K, u.size ());
+    print_2d_array (u.data (), K, u.size ());
+#endif
 }
