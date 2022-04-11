@@ -235,7 +235,7 @@ struct trans_eq_solver {
                      funcs::f, funcs::u_next);
 
         // Calc u rights and ups in zero area
-        const int next_rank = 1, prev_rank = map_mgr.num_threads - 1;
+        const int next_rank = 1;
         for (int i_chunk = 1; i_chunk < map_mgr.num_areas; ++i_chunk) {
             // Fill u(t = 0, x)
             const rect_t rect_right = area_params.get_right_rect (i_chunk);
@@ -282,7 +282,6 @@ struct trans_eq_solver {
 
     void
     calc_zero_rank_grid_border () {
-        const auto[dx, dt] = map_mgr.calc_dx_dt ();
         std::size_t u_buf_x_size = map_mgr.x_size;
         std::vector <double> u_t_buf, u_x_buf;
 
@@ -313,8 +312,6 @@ struct trans_eq_solver {
                                      funcs::f, funcs::u_next);
 
             for (int i_chunk_g = 1 + i_area; i_chunk_g < map_mgr.num_areas; ++i_chunk_g) {
-                int i_chunk_l = i_chunk_g - i_area;
-
                 const rect_t rect_right = area_params.get_right_rect (i_chunk_g);
                 const rect_t rect_up = area_params.get_up_rect (i_chunk_g);
                 double* u_buf_right_begin = u_buf.data () + rect_right.get_offset_rect (u_buf_x_size);
@@ -354,7 +351,6 @@ struct trans_eq_solver {
 
     void
     calc_non_zero_rank_grid_border (int rank) {
-        auto[dx, dt] = map_mgr.calc_dx_dt ();
         std::size_t u_buf_x_size = map_mgr.x_size;
 
         const int next_rank = rank == map_mgr.num_threads - 1 ? 0 : rank + 1;
@@ -461,7 +457,46 @@ struct trans_eq_solver {
                              F f,
                              U_next u_next)
     {
-        // todo
+        // u_k1_m1 = u_next (dx, dt, u_k_m, u_k_m1, u_k1_m, f_kh_mh)
+
+        auto[dx, dt] = map_mgr.calc_dx_dt ();
+        double x_min = map_mgr.x_min + x_i_min * dx;
+        double t_min = map_mgr.t_min + t_i_min * dt;
+
+        // Calc left down point
+        u_buf[0] = u_next (dx, dt, u_x_buf[0], u_x_buf[1], u_t_buf[0],
+                           f (x_min - dx/2, t_min - dt/2));
+
+        // Calc first row of u
+        double u_k1_m = u_buf[0];
+        for (std::size_t x_i_rel = 1; x_i_rel < x_size_calc; ++x_i_rel) {
+            double u_k_m  = u_x_buf[x_i_rel];
+            double u_k_m1 = u_x_buf[x_i_rel + 1];
+
+            double x = x_min + x_i_rel * dx;
+            double f_kh_mh = f (t_min - dt/2, x - dx/2);
+
+            u_k1_m = u_buf[x_i_rel]
+                   = u_next (dx, dt, u_k_m, u_k_m1, u_k1_m, f_kh_mh);
+        }
+
+        // Calc first col of u
+        double u_k_m1 = u_buf[0];
+        for (std::size_t t_i_rel = 1; t_i_rel < t_size_calc; ++t_i_rel) {
+            double u_k_m  = u_t_buf[t_i_rel - 1];
+            double u_k1_m = u_t_buf[t_i_rel];
+
+            double t = t_min + t_i_rel * dt;
+            double f_kh_mh = f (t - dt/2, x_min - dx/2);
+
+            u_k_m1 = u_buf[t_i_rel * u_buf_x_size]
+                   = u_next (dx, dt, u_k_m, u_k_m1, u_k1_m, f_kh_mh);
+        }
+
+        // Calc rect (x_size_calc - 1) x (t_size_calc - 1)
+        calc_u_rect (u_buf + u_buf_x_size + 1, u_buf_x_size,
+                     x_i_min + 1, t_i_min + 1, x_size_calc -1, t_size_calc -1,
+                     funcs::f, funcs::u_next);
     } // void calc_u_rect_x_row_t_col (T* u_buf, ..., U_next u_next)
 
     template <typename T, typename F, typename U_next>
@@ -492,7 +527,28 @@ struct trans_eq_solver {
                        F f,
                        U_next u_next)
     {
-        // todo
+        // u_k1_m1 = u_next (dx, dt, u_k_m, u_k_m1, u_k1_m, f_kh_mh)
+
+        auto[dx, dt] = map_mgr.calc_dx_dt ();
+        double x_min = map_mgr.x_min + x_i_min * dx;
+        double t_min = map_mgr.t_min + t_i_min * dt;
+
+        // Calc first row of u
+        for (std::size_t x_i_rel = 0; x_i_rel < x_size_calc; ++x_i_rel) {
+            double u_k_m  = u_x_buf[x_i_rel];
+            double u_k_m1 = u_x_buf[x_i_rel + 1];
+            double u_k1_m = u_buf[x_i_rel - 1];
+
+            double x = x_min + x_i_rel * dx;
+            double f_kh_mh = f (t_min - dt/2, x - dx/2);
+
+            u_buf[x_i_rel] = u_next (dx, dt, u_k_m, u_k_m1, u_k1_m, f_kh_mh);
+        }
+
+        // Calc (rect x_size_calc) x (t_size_calc - 1) // todo
+        calc_u_rect (u_buf + u_buf_x_size, u_buf_x_size, x_i_min, t_i_min + 1,
+                     x_size_calc, t_size_calc - 1,
+                     funcs::f, funcs::u_next);
     } // void calc_u_rect_x_row (T* u_buf, ..., U_next u_next)
 
     template <typename T, typename F, typename U_next>
@@ -522,7 +578,31 @@ struct trans_eq_solver {
                        F f,
                        U_next u_next)
     {
-        // todo
+        // u_k1_m1 = u_next (dx, dt, u_k_m, u_k_m1, u_k1_m, f_kh_mh)
+
+        auto[dx, dt] = map_mgr.calc_dx_dt ();
+        double x_min = map_mgr.x_min + x_i_min * dx;
+        double t_min = map_mgr.t_min + t_i_min * dt;
+
+        // Calc first col of u
+        for (std::size_t t_i_rel = 0; t_i_rel < t_size_calc; ++t_i_rel) {
+            double* u_buf_cur = u_buf + t_i_rel * u_buf_x_size;
+            double* u_buf_prev = u_buf_cur - u_buf_x_size;
+
+            double u_k_m  = u_t_buf[t_i_rel];
+            double u_k1_m = u_t_buf[t_i_rel + 1];
+            double u_k_m1 = *u_buf_prev;
+
+            double t = t_min + t_i_rel * dt;
+            double f_kh_mh = f (t - dt/2, x_min - dx/2);
+
+            *u_buf_cur = u_next (dx, dt, u_k_m, u_k_m1, u_k1_m, f_kh_mh);
+        }
+
+        // Calc rect of u
+        calc_u_rect (u_buf + 1, u_buf_x_size, x_i_min + 1, t_i_min,
+                     x_size_calc - 1, t_size_calc,
+                     funcs::f, funcs::u_next);
     } // void calc_u_rect_t_col (T* u_buf, ..., U_next u_next)
 
     template <typename T, typename F, typename U_next>
@@ -551,7 +631,29 @@ struct trans_eq_solver {
                  F f,
                  U_next u_next)
     {
-        // todo
+        // u_k1_m1 = u_next (dx, dt, u_k_m, u_k_m1, u_k1_m, f_kh_mh)
+
+        auto[dx, dt] = map_mgr.calc_dx_dt ();
+        double x_min = map_mgr.x_min + x_i_min * dx;
+        double t_min = map_mgr.t_min + t_i_min * dt;
+
+        // Calc rect (x_size_calc - 1) x (t_size_calc - 1)
+        for (std::size_t t_i_rel = 0; t_i_rel < t_size_calc; ++t_i_rel) {
+            double* u_row_cur = u_buf + t_i_rel * u_buf_x_size;
+            double* u_row_prev = u_buf - u_buf_x_size;
+
+            double t = t_min + t_i_rel * dt;
+            for (std::size_t x_i_rel = 0; x_i_rel < x_size_calc; ++x_i_rel) {
+                double u_k_m  = u_row_prev[-1];
+                double u_k_m1 = u_row_prev[0];
+                double u_k1_m = u_row_cur[-1];
+
+                double x = x_min + x_i_rel * dx;
+                double f_kh_mh = f (t - dt/2, x - dx/2);
+
+                u_row_cur[x_i_rel] = u_next (dx, dt, u_k_m, u_k_m1, u_k1_m, f_kh_mh);
+            }
+        }
     } // void calc_u_rect (T* u_buf, ..., U_next u_next)
 
     template <typename T, typename F, typename U_next>

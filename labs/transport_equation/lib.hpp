@@ -483,7 +483,7 @@ work_zero_rank_func_border (const trans_eq_task_t& task,
                      u_buf, f, u_next);
 
     // Calc u rights and ups in zero area
-    const int next_rank = 1, prev_rank = num_threads - 1;
+    const int next_rank = 1;
     for (int i_chunk = 1; i_chunk < num_chunk_area; ++i_chunk) {
         // Fill u(t = 0, x)
         int x_i_min = i_chunk * x_chunk_size;   // x_min - is node
