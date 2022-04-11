@@ -15,6 +15,11 @@ struct rect_t {
     get_t_i_end () const noexcept {
         return t_i_min + t_chunk_size;
     }
+
+    std::size_t
+    get_offset_rect (std::size_t buf_x_size) const noexcept {
+        return x_i_min + t_i_min * buf_x_size;
+    }
 }; // struct rect_t
 
 struct area_params_t {
@@ -299,49 +304,42 @@ struct trans_eq_solver {
                                      u_buf_x_size, area_params.zero_rect,
                                      funcs::f, funcs::u_next);
 
-            for (int i_chunk_g = 1 + i_area; i_chunk_g < num_chunk_area; ++i_chunk_g) {
+            for (int i_chunk_g = 1 + i_area; i_chunk_g < map_mgr.num_areas; ++i_chunk_g) {
                 int i_chunk_l = i_chunk_g - i_area;
-                double* buf_begin_odd  = u_buf_begin + i_chunk_l * x_chunk_size;
-                double* buf_begin_even = u_buf_begin + i_chunk_l * task.x_size;
 
-                int x_i_odd_min = x_i_min + i_chunk_l * x_chunk_size;
-                int x_i_odd_end = calc_end_index (x_i_odd_min, x_chunk_size, task.x_size);
-                int x_chunk_size_corrected = x_i_odd_end - x_i_odd_min;
+                const rect_t rect_right = area_params.get_right_rect (i_chunk_g);
+                const rect_t rect_up = area_params.get_up_rect (i_chunk_g);
+                double* u_buf_right_begin = u_buf.data () + rect_right.get_offset_rect (u_buf_x_size);
+                double* u_buf_up_begin = u_buf.data () + rect_up.get_offset_rect (u_buf_x_size);
+
+                u_x_buf.resize (rect_right.x_chunk_size + 1);
+                u_t_buf.resize (rect_up.t_chunk_size);
 
                 // Calc u odd
-                MPI_Recv (buf_begin_odd - task.x_size - 1, x_chunk_size_corrected + 1,
-                        MPI_DOUBLE, prev_rank, TAG_BORDER_COND, MPI_COMM_WORLD, &status);
+                MPI_Recv (u_x_buf.data (), u_x_buf.size (),
+                          MPI_DOUBLE, prev_rank, TAG_BORDER_COND, MPI_COMM_WORLD, &status);
 
-                calc_u_full_buf (x_chunk_size_corrected + 1, t_chunk_size + 1,
-                                task.x_size,
-                                x_i_odd_min - 1 , t_i_min - 1, dx, dt,
-                                u_buf, f, u_next);
+                calc_u_rect_x_row (u_buf_right_begin, u_x_buf.data (), u_buf_x_size, rect_right,
+                                   funcs::f, funcs::u_next);
 
                 // Send up
-                MPI_Send (buf_begin_odd + (t_chunk_size - 1) * task.x_size - 1, x_chunk_size_corrected + 1,
-                        MPI_DOUBLE, next_rank, TAG_BORDER_COND, MPI_COMM_WORLD);
-
-                int t_i_odd_min = t_i_min + i_chunk_l * t_chunk_size;
-                int t_i_odd_end = calc_end_index (t_i_odd_min, t_chunk_size, task.t_size);
-                int t_chunk_size_corrected = t_i_odd_end - t_i_odd_min;
+                MPI_Send (u_buf_right_begin + u_buf_x_size * (rect_up.t_chunk_size - 1) - 1,
+                          rect_up.x_chunk_size + 1,
+                          MPI_DOUBLE, next_rank, TAG_BORDER_COND, MPI_COMM_WORLD);
 
                 // Calc u even
-                MPI_Recv (u_t_buf.data (), t_chunk_size_corrected, MPI_DOUBLE,
-                        prev_rank, TAG_BORDER_COND, MPI_COMM_WORLD, &status);
-                copy_row_2_col (buf_begin_even - 1, u_t_buf.data (),
-                                task.x_size, t_chunk_size_corrected);
+                MPI_Recv (u_t_buf.data (), u_t_buf.size (), MPI_DOUBLE,
+                          prev_rank, TAG_BORDER_COND, MPI_COMM_WORLD, &status);
 
-                calc_u_full_buf (x_chunk_size + 1, t_chunk_size_corrected + 1,
-                                task.x_size,
-                                x_i_min - 1, t_i_odd_min - 1, dx, dt,
-                                u_buf, f, u_next);
+                calc_u_rect_t_col (u_buf_up_begin, u_t_buf.data (), u_buf_x_size, rect_up,
+                                   funcs::f, funcs::u_next);
 
                 // Send right
                 copy_col_2_row (u_t_buf.data (),
-                                buf_begin_even + x_chunk_size - 1,
-                                task.x_size, t_chunk_size_corrected);
-                MPI_Send (u_t_buf.data (), t_chunk_size_corrected,
-                        MPI_DOUBLE, next_rank, TAG_BORDER_COND, MPI_COMM_WORLD);
+                                u_buf_up_begin + rect_up.x_chunk_size - 1,
+                                u_buf_x_size, rect_up.t_chunk_size);
+                MPI_Send (u_t_buf.data (), u_t_buf.size (),
+                          MPI_DOUBLE, next_rank, TAG_BORDER_COND, MPI_COMM_WORLD);
             }
         }
     } // void calc_zero_rank_grid_border ()
