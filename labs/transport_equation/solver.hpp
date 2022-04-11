@@ -20,6 +20,12 @@ struct rect_t {
     get_offset_rect (std::size_t buf_x_size) const noexcept {
         return x_i_min + t_i_min * buf_x_size;
     }
+
+    std::size_t
+    get_offset_rect (std::size_t buf_x_size,
+                     const rect_t& zero_rect) const noexcept {
+        return (x_i_min - zero_rect.x_i_min) + (t_i_min - zero_rect.t_i_min) * buf_x_size;
+    }
 }; // struct rect_t
 
 struct area_params_t {
@@ -38,8 +44,13 @@ struct area_params_t {
     }
 
     int
+    get_zero_and_right_rect_x_size () const noexcept {
+        return x_i_end - zero_rect.x_i_min;
+    }
+
+    int
     get_zero_and_right_rect_size () const noexcept {
-        return get_t_zero_chunk_size () * (x_i_end - zero_rect.x_i_min);
+        return get_t_zero_chunk_size () * get_zero_and_right_rect_x_size ();
     }
 
     int
@@ -280,10 +291,7 @@ struct trans_eq_solver {
         // 2) Calc u, where need gridden border conditions
         // area - is set of chuks: |__
         MPI_Status status = {};
-        for (int i_area = map_mgr.num_threads;
-             i_area < map_mgr.num_areas;
-             i_area += map_mgr.num_threads)
-        {
+        for (int i_area = map_mgr.num_threads; i_area < map_mgr.num_areas; i_area += map_mgr.num_threads) {
             const area_params_t area_params = map_mgr.get_area_params (i_area);
             const rect_t& zero_rect = area_params.zero_rect;
 
@@ -346,7 +354,93 @@ struct trans_eq_solver {
 
     void
     calc_non_zero_rank_grid_border (int rank) {
+        auto[dx, dt] = map_mgr.calc_dx_dt ();
+        std::size_t u_buf_x_size = map_mgr.x_size;
 
+        const int next_rank = rank == map_mgr.num_threads - 1 ? 0 : rank + 1;
+        const int prev_rank = rank - 1;
+
+        std::vector <double> u_buf_right, u_buf_up, u_x_buf, u_t_buf;
+
+        // area - is set of chuks: |__
+        MPI_Status status = {};
+        for (int i_area = rank; i_area < map_mgr.num_areas; i_area += map_mgr.num_threads) {
+            const area_params_t area_params = map_mgr.get_area_params (i_area);
+            const rect_t& zero_rect = area_params.zero_rect;
+
+            double* u_buf_begin = u_buf.data () + zero_rect.get_offset_rect (u_buf_x_size);
+
+            // Get x and t array from prev rank
+            u_x_buf.resize (zero_rect.x_chunk_size);
+            u_t_buf.resize (zero_rect.t_chunk_size);
+            u_buf_right.resize (area_params.get_zero_and_right_rect_size ());
+            std::size_t u_buf_right_x_size = area_params.get_zero_and_right_rect_x_size ();
+            std::size_t u_buf_up_x_size = zero_rect.x_chunk_size;
+
+            MPI_Recv (u_x_buf.data (), zero_rect.x_chunk_size,
+                      MPI_DOUBLE, prev_rank, TAG_BORDER_COND, MPI_COMM_WORLD, &status);
+            MPI_Recv (u_t_buf.data (), zero_rect.t_chunk_size,
+                      MPI_DOUBLE, prev_rank, TAG_BORDER_COND, MPI_COMM_WORLD, &status);
+
+            // Calc zero area
+            calc_u_rect_x_row_t_col (u_buf_begin, u_x_buf.data (), u_t_buf.data (),
+                                     u_buf_x_size, zero_rect,
+                                     funcs::f, funcs::u_next);
+
+            if (area_params.get_up_rect_size () != 0) {
+                u_buf_up.resize (area_params.get_up_rect_size () + zero_rect.x_chunk_size + 1);
+                std::copy_n (u_buf_right.data () + (zero_rect.t_chunk_size - 1) * u_buf_right_x_size,
+                             zero_rect.x_chunk_size + 1, u_buf_up.data ());
+            }
+
+            double* u_buf_up_begin_ = u_buf_up.data () + zero_rect.x_chunk_size + 1;
+            for (int i_chunk_g = 1 + i_area; i_chunk_g < map_mgr.num_areas; ++i_chunk_g) {
+                int i_chunk_l = i_chunk_g - i_area;
+
+                const rect_t rect_right = area_params.get_right_rect (i_chunk_g);
+                const rect_t rect_up = area_params.get_up_rect (i_chunk_g);
+
+                double* u_buf_right_begin = u_buf_right.data () +
+                                            rect_right.get_offset_rect (u_buf_right_x_size, zero_rect);
+                double* u_buf_up_begin = u_buf_up_begin_ +
+                                         (i_chunk_l - 1) * u_buf_up_x_size * zero_rect.t_chunk_size;
+
+                // Calc u odd
+                MPI_Recv (u_x_buf.data (), rect_right.x_chunk_size + 1,
+                          MPI_DOUBLE, prev_rank, TAG_BORDER_COND, MPI_COMM_WORLD, &status);
+
+                calc_u_rect_x_row (u_buf_right_begin, u_x_buf.data (),
+                                   u_buf_right_x_size, rect_right,
+                                   funcs::f, funcs::u_next);
+
+                // Send up
+                MPI_Send (u_buf_right_begin + (rect_right.t_chunk_size - 1) * u_buf_right_x_size - 1,
+                          rect_right.x_chunk_size + 1,
+                          MPI_DOUBLE, next_rank, TAG_BORDER_COND, MPI_COMM_WORLD);
+
+                // Calc u even
+                MPI_Recv (u_t_buf.data (), rect_up.t_chunk_size,
+                          MPI_DOUBLE, prev_rank, TAG_BORDER_COND, MPI_COMM_WORLD, &status);
+
+                calc_u_rect_t_col (u_buf_up_begin, u_t_buf.data (),
+                                   u_buf_up_x_size, rect_up,
+                                   funcs::f, funcs::u_next);
+
+                // Send right
+                copy_col_2_row (u_t_buf.data (),
+                                u_buf_up_begin + u_buf_up_x_size - 1,
+                                u_buf_up_x_size, rect_up.t_chunk_size);
+                MPI_Send (u_t_buf.data (), rect_up.t_chunk_size,
+                          MPI_DOUBLE, next_rank, TAG_BORDER_COND, MPI_COMM_WORLD);
+            }
+
+            // Send u_buf_right and u_buf_up to process with rank 0
+            MPI_Send (u_buf_right.data (), u_buf_right.size (),
+                      MPI_DOUBLE, 0, TAG_SAVE_ON_HOST, MPI_COMM_WORLD);
+
+            MPI_Send (u_buf_up.data (), u_buf_up.size (),
+                      MPI_DOUBLE, 0, TAG_SAVE_ON_HOST, MPI_COMM_WORLD);
+        }
     } // void calc_non_zero_rank_grid_border (int rank)
 
     void
