@@ -54,12 +54,17 @@ struct area_params_t {
     }
 
     int
+    get_up_rect_x_size () const noexcept {
+        return zero_rect.x_chunk_size;
+    }
+
+    int
     get_up_rect_size () const noexcept {
         int area_t_size = t_i_end - zero_rect.t_i_min;
         if (area_t_size <= zero_rect.t_chunk_size) {
             return 0;
         } else {
-            return (area_t_size - zero_rect.t_chunk_size) * zero_rect.x_chunk_size;
+            return (area_t_size - zero_rect.t_chunk_size) * get_up_rect_x_size ();
         }
     }
 
@@ -391,7 +396,7 @@ struct trans_eq_solver {
 
             u_buf_right.resize (area_params.get_zero_and_right_rect_size ());
             std::size_t u_buf_right_x_size = area_params.get_zero_and_right_rect_x_size ();
-            std::size_t u_buf_up_x_size = zero_rect.x_chunk_size;
+            std::size_t u_buf_up_x_size = area_params.get_up_rect_x_size ();
 
             MPI_Recv (u_x_buf.data (), zero_rect.x_chunk_size + 1,
                       MPI_DOUBLE, prev_rank, TAG_BORDER_COND, MPI_COMM_WORLD, &status);
@@ -404,12 +409,12 @@ struct trans_eq_solver {
                                      funcs::f, funcs::u_next);
 
             if (area_params.get_up_rect_size () != 0) {
-                u_buf_up.resize (area_params.get_up_rect_size () + zero_rect.x_chunk_size);
+                u_buf_up.resize (area_params.get_up_rect_size () + u_buf_up_x_size);
                 std::copy_n (u_buf_right.data () + (zero_rect.t_chunk_size - 1) * u_buf_right_x_size,
-                             zero_rect.x_chunk_size, u_buf_up.data ());
+                             u_buf_up_x_size, u_buf_up.data ());
             }
 
-            double* u_buf_up_begin_ = u_buf_up.data () + zero_rect.x_chunk_size;
+            double* u_buf_up_begin_ = u_buf_up.data () + u_buf_up_x_size;
             for (int i_chunk_g = 1 + i_area; i_chunk_g < map_mgr.num_areas; ++i_chunk_g) {
                 int i_chunk_l = i_chunk_g - i_area;
 
@@ -462,14 +467,56 @@ struct trans_eq_solver {
             MPI_Send (u_buf_right.data (), u_buf_right.size (),
                       MPI_DOUBLE, 0, TAG_SAVE_ON_HOST, MPI_COMM_WORLD);
 
-            MPI_Send (u_buf_up_begin_, area_params.get_up_rect_size (),
-                      MPI_DOUBLE, 0, TAG_SAVE_ON_HOST, MPI_COMM_WORLD);
+            if (area_params.get_up_rect_size () != 0) {
+                MPI_Send (u_buf_up_begin_, area_params.get_up_rect_size (),
+                          MPI_DOUBLE, 0, TAG_SAVE_ON_HOST, MPI_COMM_WORLD);
+            }
         }
     } // void calc_non_zero_rank_grid_border (int rank)
 
     void
     receive_u_bufs () {
+        const std::size_t u_buf_x_size = map_mgr.x_size;
+        std::vector <double> u_buf_right, u_buf_up;
 
+        MPI_Status status = {};
+        for (int i_area = 1; i_area < map_mgr.num_areas; ++i_area) {
+            int source = i_area % map_mgr.num_threads;
+            if (source == 0) {
+                continue;
+            }
+
+            const area_params_t area_params = map_mgr.get_area_params (i_area);
+            const rect_t& zero_rect = area_params.zero_rect;
+
+            const std::size_t u_buf_right_x_size = area_params.get_zero_and_right_rect_x_size ();
+            const std::size_t u_buf_right_size = area_params.get_zero_and_right_rect_size ();
+            const std::size_t u_buf_up_x_size = area_params.get_up_rect_x_size ();
+            const std::size_t u_buf_up_size = area_params.get_up_rect_size ();
+
+            u_buf_right.resize (u_buf_right_size);  // todo delete
+            u_buf_up.resize (u_buf_up_size);        // todo delete
+
+            // Receive right buffer
+            // std::cout << "host, want get buf_right_size: " << buf_right_size << '\n';
+            MPI_Recv (u_buf_right.data (), u_buf_right_size,
+                      MPI_DOUBLE, source, TAG_SAVE_ON_HOST, MPI_COMM_WORLD, &status);
+            
+            double* u_buf_right_begin = u_buf.data () + zero_rect.get_offset_rect (u_buf_x_size);
+            copy_row_2_rect (u_buf_right_begin, u_buf_right.data (),
+                             u_buf_right_x_size, u_buf_x_size, u_buf_right_size);
+
+            if (u_buf_up_size != 0) {
+                // Receive up buffer
+                // std::cout << "host, want get tmp_buf_up.size (): " << u_buf_up.size () << std::endl;
+                MPI_Recv (u_buf_up.data (), u_buf_up_size,
+                          MPI_DOUBLE, source, TAG_SAVE_ON_HOST, MPI_COMM_WORLD, &status);
+
+                double* u_buf_up_begin = u_buf_right_begin + zero_rect.t_chunk_size * u_buf_x_size;
+                copy_row_2_rect (u_buf_up_begin, u_buf_up.data (),
+                                 u_buf_up_x_size, u_buf_x_size, u_buf_up_size);
+            }
+        }
     } // void receive_u_bufs ()
 
     template <typename T, typename F, typename U_next>
