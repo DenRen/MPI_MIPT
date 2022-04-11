@@ -1148,7 +1148,7 @@ struct trans_eq_solver {
             const area_params_t area_params = map_mgr.get_area_params (i_area);
             const rect_t& zero_rect = area_params.zero_rect;
 
-            u_t_buf.resize (zero_rect.t_chunk_size);
+            u_t_buf.resize (zero_rect.t_chunk_size + 1);
             u_x_buf.resize (zero_rect.x_chunk_size + 1);
 
             std::size_t zero_pos = zero_rect.t_i_min * u_buf_x_size + zero_rect.x_i_min;
@@ -1165,32 +1165,32 @@ struct trans_eq_solver {
                                      u_buf_x_size, zero_rect,
                                      funcs::f, funcs::u_next);
 
+            u_t_buf[zero_rect.t_chunk_size] = u_t_buf[zero_rect.t_chunk_size - 1];
             for (int i_chunk_g = 1 + i_area; i_chunk_g < map_mgr.num_areas; ++i_chunk_g) {
                 int i_chunk_l = i_chunk_g - i_area;
+
                 const rect_t rect_right = area_params.get_right_rect (i_chunk_l);
                 const rect_t rect_up = area_params.get_up_rect (i_chunk_l);
+                
                 double* u_buf_right_begin = u_buf.data () + rect_right.get_offset_rect (u_buf_x_size);
                 double* u_buf_up_begin = u_buf.data () + rect_up.get_offset_rect (u_buf_x_size);
 
-                u_x_buf[0] = u_x_buf[zero_rect.x_chunk_size];
-                u_x_buf.resize (rect_right.x_chunk_size + 1);   // todo delete
-                u_t_buf.resize (rect_up.t_chunk_size + 1);      // todo delete
-
                 // Calc u odd
+                u_x_buf[0] = u_x_buf[zero_rect.x_chunk_size];
                 MPI_Recv (u_x_buf.data () + 1, rect_right.x_chunk_size,
                           MPI_DOUBLE, prev_rank, TAG_BORDER_COND, MPI_COMM_WORLD, &status);
 
                 calc_u_rect_x_row (u_buf_right_begin, u_x_buf.data (), u_buf_x_size, rect_right,
                                    funcs::f, funcs::u_next);
 
-                // Send up
+                // Send up row
                 if (i_chunk_l == 1) {
-                    MPI_Send (u_buf_right_begin + (rect_up.t_chunk_size - 1) * u_buf_x_size - 1,
-                              rect_up.x_chunk_size + 1,
+                    MPI_Send (u_buf_right_begin + (rect_right.t_chunk_size - 1) * u_buf_x_size - 1,
+                              rect_right.x_chunk_size + 1,
                               MPI_DOUBLE, next_rank, TAG_BORDER_COND, MPI_COMM_WORLD);
                 } else {
-                    MPI_Send (u_buf_right_begin + (rect_up.t_chunk_size - 1) * u_buf_x_size,
-                              rect_up.x_chunk_size,
+                    MPI_Send (u_buf_right_begin + (rect_right.t_chunk_size - 1) * u_buf_x_size,
+                              rect_right.x_chunk_size,
                               MPI_DOUBLE, next_rank, TAG_BORDER_COND, MPI_COMM_WORLD);
                 }
 
@@ -1202,7 +1202,7 @@ struct trans_eq_solver {
                 calc_u_rect_t_col (u_buf_up_begin, u_t_buf.data (), u_buf_x_size, rect_up,
                                    funcs::f, funcs::u_next);
 
-                // Send right
+                // Send right col
                 copy_col_2_row (u_t_buf.data (),
                                 u_buf_up_begin + rect_up.x_chunk_size - 1,
                                 u_buf_x_size, rect_up.t_chunk_size);
@@ -1614,7 +1614,6 @@ solve_trans_eq_parallel_zero_rank (const trans_eq_task_t& task,
     bufferer_thread.join ();
 } // void solve_trans_eq_parallel_zero_rank
 
-
 void
 solve_trans_eq_parallel (const trans_eq_task_t& task,
                          int* argc_ptr,
@@ -1626,7 +1625,7 @@ solve_trans_eq_parallel (const trans_eq_task_t& task,
     MPI_Comm_rank (MPI_COMM_WORLD, &rank);
     MPI_Comm_size (MPI_COMM_WORLD, &num_threads);
 
-    int k_zone = 2;
+    int k_zone = 1;
 
     treq::trans_eq_solver solver {task, num_threads, k_zone};
     solver.solve (rank);
