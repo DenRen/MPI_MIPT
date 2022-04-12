@@ -20,8 +20,8 @@ int main (int argc, char* argv[]) {
 //     check_single_thread_solution ();
 // #undef ONLY_SOLVE
 
-    int M = 15; // coord
-    int K = 15; // time
+    int M = 1500; // coord
+    int K = 1500; // time
 
     double X_max = 2;       // X_min = 0
     double T_max = 2;       // T_min = 0
@@ -31,12 +31,20 @@ int main (int argc, char* argv[]) {
     // MPI_Init (&argc, &argv);
     // int rank = 0;
     // MPI_Comm_rank (MPI_COMM_WORLD, &rank);
+
     // long i = 0;
+    // MPI_Status status;
     // if (rank) {
-    //     MPI_Status status;
+    //     sleep (2);
     //     MPI_Recv (&i, 1, MPI_INT, 0, 3, MPI_COMM_WORLD, &status);
+    //     std::cout << "a_1\n";
+    //     MPI_Recv (&i, 2, MPI_INT, 0, 4, MPI_COMM_WORLD, &status);
+    //     std::cout << "b_1\n";
     // } else {
-    //     MPI_Send (&i, 2, MPI_INT, 1, 3, MPI_COMM_WORLD);
+    //     MPI_Ssend (&i, 1, MPI_INT, 1, 3, MPI_COMM_WORLD);
+    //     std::cout << "a_0\n";
+    //     MPI_Send (&i, 2, MPI_INT, 1, 4, MPI_COMM_WORLD);
+    //     std::cout << "b_0\n";
     // }
     // MPI_Finalize ();
 
