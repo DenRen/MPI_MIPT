@@ -665,26 +665,33 @@ struct trans_eq_solver {
         if (rank == 0) {
             std::vector <double> u_buf (map_mgr.x_size * map_mgr.t_size);
 
-            auto compute_func = [&] {
+            if (map_mgr.num_threads == 1) {
                 calc_zero_rank_func_border (u_buf);
-                calc_zero_rank_grid_border (u_buf);
-            };
-
-            auto bufferize_func = [&] {
                 receive_u_bufs (u_buf);
-            };
+            } else {
+                auto compute_func = [&] {
+                    calc_zero_rank_func_border (u_buf);
+                    calc_zero_rank_grid_border (u_buf);
+                };
 
-            std::thread compute_thread {compute_func};
-            std::thread bufferer_thread {bufferize_func};
+                auto bufferize_func = [&] {
+                    receive_u_bufs (u_buf);
+                };
 
-            compute_thread.join ();
-            bufferer_thread.join ();
+                std::thread compute_thread {compute_func};
+                std::thread bufferer_thread {bufferize_func};
 
-            print_2d_array (u_buf.data (), map_mgr.x_size, u_buf.size ());
+                compute_thread.join ();
+                bufferer_thread.join ();
+            }
+
+            { volatile double tr = u_buf[3]; }
+
+            // print_2d_array (u_buf.data (), map_mgr.x_size, u_buf.size ());
         } else {
             calc_non_zero_rank_grid_border (rank);
         }
-    } // void solve
+    } // void solve (int rank)
 
     void
     calc_zero_rank_func_border (std::vector <double>& u_buf) {
@@ -765,6 +772,8 @@ struct trans_eq_solver {
             MPI_Send (u_t_buf.data (), rect_up.t_chunk_size,
                       MPI_DOUBLE, next_rank, TAG_BORDER_COND, MPI_COMM_WORLD);
         }
+
+        // std::cerr << "Complete area: " << 0 << std::endl;
     } // void calc_zero_rank_func_border ()
 
     void
@@ -804,7 +813,7 @@ struct trans_eq_solver {
 
                 const rect_t rect_right = area_params.get_right_rect (i_chunk_l);
                 const rect_t rect_up = area_params.get_up_rect (i_chunk_l);
-                
+
                 double* u_buf_right_begin = u_buf.data () + rect_right.get_offset_rect (u_buf_x_size);
                 double* u_buf_up_begin = u_buf.data () + rect_up.get_offset_rect (u_buf_x_size);
 
@@ -935,16 +944,19 @@ struct trans_eq_solver {
                           MPI_DOUBLE, next_rank, TAG_BORDER_COND, MPI_COMM_WORLD);
             }
 
+            // std::cerr << "Complete area: " << i_area << std::endl;
+
             // Send u_buf_right and u_buf_up to process with rank 0
             // std::cout << "host, want send buf_right_size: " << area_params.get_zero_and_right_rect_size () << '\n';
-            MPI_Ssend (u_buf_right.data (), area_params.get_zero_and_right_rect_size (),
+            MPI_Send (u_buf_right.data (), area_params.get_zero_and_right_rect_size (),
                       MPI_DOUBLE, 0, TAG_SAVE_ON_HOST, MPI_COMM_WORLD);
 
             if (area_params.get_up_rect_size () != 0) {
                 // std::cout << "host, want send buf_up_size: " << area_params.get_up_rect_size () << '\n';
-                MPI_Ssend (u_buf_up_begin_, area_params.get_up_rect_size (),
+                MPI_Send (u_buf_up_begin_, area_params.get_up_rect_size (),
                           MPI_DOUBLE, 0, TAG_SAVE_ON_HOST, MPI_COMM_WORLD);
             }
+            // std::cerr << "Sended area: " << i_area << std::endl;
         }
     } // void calc_non_zero_rank_grid_border (int rank)
 
@@ -959,7 +971,7 @@ struct trans_eq_solver {
             if (source == 0) {
                 continue;
             }
-            DUMP (source);
+            // DUMP (source);
 
             const area_params_t area_params = map_mgr.get_area_params (i_area);
             const rect_t& zero_rect = area_params.zero_rect;
@@ -972,14 +984,18 @@ struct trans_eq_solver {
             u_buf_right.resize (u_buf_right_size);  // todo delete
             u_buf_up.resize (u_buf_up_size);        // todo delete
 
-            DUMP (u_buf_right_size);
-            DUMP (u_buf_right.data ());
+            // DUMP (u_buf_right_size);
+            // DUMP (u_buf_right.data ());
             // sleep (1);
             // Receive right buffer
             // std::cout << "host, want get buf_right_size: " << u_buf_right_size << '\n';
-            MPI_Probe (source, TAG_SAVE_ON_HOST, MPI_COMM_WORLD, &status);
+            // MPI_Probe (source, TAG_SAVE_ON_HOST, MPI_COMM_WORLD, &status);
             MPI_Recv (u_buf_right.data (), u_buf_right_size,
                       MPI_DOUBLE, source, TAG_SAVE_ON_HOST, MPI_COMM_WORLD, &status);
+
+            // int count = -1;
+            // MPI_Get_count (&status, MPI_DOUBLE, &count);
+            // DUMP (count);
 
             double* u_buf_right_begin = u_buf.data () + zero_rect.get_offset_rect (u_buf_x_size);
             copy_row_2_rect (u_buf_right_begin, u_buf_right.data (),
@@ -995,6 +1011,7 @@ struct trans_eq_solver {
                 copy_row_2_rect (u_buf_up_begin, u_buf_up.data (),
                                  u_buf_up_x_size, u_buf_x_size, u_buf_up_size);
             }
+            // std::cerr << "Getted area: " << i_area << std::endl;
         }
     } // void receive_u_bufs ()
 
@@ -1239,7 +1256,7 @@ solve_trans_eq_parallel (const trans_eq_task_t& task,
     MPI_Comm_rank (MPI_COMM_WORLD, &rank);
     MPI_Comm_size (MPI_COMM_WORLD, &num_threads);
 
-    int k_zone = 4;
+    int k_zone = 2;
 
     treq::trans_eq_solver solver {task, num_threads, k_zone};
     solver.solve (rank);
