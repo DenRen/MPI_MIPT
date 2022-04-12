@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "lib.hpp"
+#include "treq_lib.hpp"
 
 TEST (COPY_ROW_2_COL, STATIC) {
     int x_size = 10, t_size = 15;
@@ -64,14 +64,6 @@ TEST (COPY_ROW_2_RECT, STATIC) {
         }
     }
 } // TEST (COPY_ROW_2_RECT, STATIC)
-
-TEST (CALC_END_INDEX, STATIC) {
-    ASSERT_EQ (calc_end_index ( 0, 4,  5), 4);
-    ASSERT_EQ (calc_end_index (10, 4, 13), 13);
-    ASSERT_EQ (calc_end_index (10, 4, 14), 14);
-    ASSERT_EQ (calc_end_index (10, 4, 15), 14);
-    ASSERT_EQ (calc_end_index (10, 4, 5),  5);
-} // TEST (CALC_END_INDEX, STATIC)
 
 TEST (REMOVE_LEFT_DOWN_BOUND, STATIC) {
     std::vector <double> v = {

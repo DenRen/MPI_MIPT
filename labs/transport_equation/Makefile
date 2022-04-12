@@ -1,9 +1,5 @@
 #https://www.gnu.org/software/make/manual/html_node/Implicit-Variables.html
 
-# CC  = clang++-12
-# CXX = clang++-12
-# LD  = clang++-12
-
 CC  = mpic++
 CXX = mpic++
 LD  = mpic++
@@ -21,25 +17,17 @@ CFLAGS   = $(COMMON_FLAGS)
 CXXFLAGS = $(COMMON_FLAGS)
 LDFLAGS  = $(COMMON_FLAGS)
 
-OBJS = main.o BinArray.o
-TEST_DIR = tests
-SANDBOX_DIR = sandbox
+OBJS = treq_lib.o
 
-all: main.out test.out gen_test.out
+all: main.out test.out
 
 # Main -------------------------
-main.out: main.cpp
+main.out: main.o $(OBJS)
 	$(CXX) $(CXXFLAGS) $^ -o $@
 
 # Test -------------------------
-test.out: test.cpp
+test.out: test.o $(OBJS)
 	$(CXX) $(CXXFLAGS) $^ -o $@ $(GTEST_FLAGS)
-
-gen_test.out: gen_test.cpp
-	$(CXX) $(CXXFLAGS) $^ -o $@
-
-full_solve.out: full_solve.cpp
-	$(CXX) $(CXXFLAGS) $^ -o $@
 
 # Clean -------------------------
 tmp_clean:
@@ -51,6 +39,6 @@ clean: tmp_clean
 clean_test:
 	$(RM) test_ref.txt test.txt
 
--include main.d test.d gen_test.d full_solve.d
+-include treq_lib.d print_lib.d func_lib.d copy_transform.d
 
 .PHONY: all clean_temp clean clean_test

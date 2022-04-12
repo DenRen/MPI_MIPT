@@ -163,7 +163,7 @@ operator << (std::ostream& os,
     auto iter = std::cbegin (set);
 
     os <<  "{";
-    if  (size != 0) {    
+    if  (size != 0) {
         while (size-- != 1) {
             os << *iter++ << ", ";
         }
@@ -218,3 +218,5 @@ print_2d_array (const std::vector <T>& vec,
 {
     print_2d_array (vec.data (), row_size, vec.size ());
 }
+
+#define DUMP(obj) std::cerr << #obj ": " << obj << std::endl

@@ -50,6 +50,7 @@
         "typeinfo": "cpp",
         "thread": "cpp",
         "chrono": "cpp",
-        "ratio": "cpp"
+        "ratio": "cpp",
+        "cassert": "cpp"
     }
 }
