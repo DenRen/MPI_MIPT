@@ -184,7 +184,7 @@ operator << (std::ostream& os, const std::array <T, N>& arr) {
 
     return os;
 }
-#include <fstream>
+
 template <typename T>
 void
 print_2d_array (const T* begin,
@@ -193,22 +193,22 @@ print_2d_array (const T* begin,
 {
     std::size_t col_size = full_size / row_size;
 
-    // std::ios_base::sync_with_stdio (false);
+    std::ios_base::sync_with_stdio (false);
 
-    // std::cout << std::fixed << std::setw (10) << std::setprecision (4);
+    std::cout << std::fixed << std::setw (10) << std::setprecision (4);
 
-    // for (std::size_t t = col_size - 1; t + 1 > 0; --t) {
-    //     std::cout << std::fixed << std::setw (10) << begin[t * row_size];
-    //     for (std::size_t x = 1; x < row_size; ++x) {
-    //         std::cout << ' ' << std::fixed << std::setw (10) << begin[x + t * row_size];
-    //     }
-    //     std::cout << '\n';
-    // }
-    // std::cout << '\n';
+    for (std::size_t t = col_size - 1; t + 1 > 0; --t) {
+        std::cout << std::fixed << std::setw (10) << begin[t * row_size];
+        for (std::size_t x = 1; x < row_size; ++x) {
+            std::cout << ' ' << std::fixed << std::setw (10) << begin[x + t * row_size];
+        }
+        std::cout << '\n';
+    }
+    std::cout << '\n';
 
-    FILE* file = fopen64 ("r_m", "wb");
-    fwrite_unlocked (begin, sizeof (T), full_size, file);
-    fclose (file);
+    // FILE* file = fopen ("r_m", "wb");
+    // fwrite (begin, sizeof (T), full_size, file);
+    // fclose (file);
 }
 
 template <typename T>

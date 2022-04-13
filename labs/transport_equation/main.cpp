@@ -5,8 +5,8 @@ int main (int argc, char* argv[]) {
 //     check_single_thread_solution ();
 // #undef ONLY_SOLVE
 
-    int M = 30000; // coord
-    int K = 30000; // time
+    int M = 30000 / 1; // coord
+    int K = 30000 / 10; // time
 
     double X_max = 2;       // X_min = 0
     double T_max = 2;       // T_min = 0

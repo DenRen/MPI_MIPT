@@ -19,15 +19,15 @@ LDFLAGS  = $(COMMON_FLAGS)
 
 OBJS = treq_lib.o
 
-all: main.out test.out
+all: main.out #test.out
 
 # Main -------------------------
 main.out: main.o $(OBJS)
 	$(CXX) $(CXXFLAGS) $^ -o $@
 
 # Test -------------------------
-test.out: test.o $(OBJS)
-	$(CXX) $(CXXFLAGS) $^ -o $@ $(GTEST_FLAGS)
+# test.out: test.o $(OBJS)
+# 	$(CXX) $(CXXFLAGS) $^ -o $@ $(GTEST_FLAGS)
 
 # Clean -------------------------
 tmp_clean:

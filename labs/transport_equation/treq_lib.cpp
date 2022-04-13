@@ -149,29 +149,32 @@ trans_eq_solver::solve (int rank) {
     if (rank == 0) {
         std::vector <double> u_buf (map_mgr.x_size * map_mgr.t_size);
 
-        if (map_mgr.num_threads == 1) {
-            calc_zero_rank_func_border (u_buf);
-            receive_u_bufs (u_buf);
-        } else {
-            auto compute_func = [&] {
-                calc_zero_rank_func_border (u_buf);
-                calc_zero_rank_grid_border (u_buf);
-            };
+        calc_zero_rank_func_border (u_buf);
+        receive_u_bufs (u_buf);
 
-            auto bufferize_func = [&] {
-                receive_u_bufs (u_buf);
-            };
+        // if (map_mgr.num_threads == 1) {
+        //     calc_zero_rank_func_border (u_buf);
+        //     receive_u_bufs (u_buf);
+        // } else {
+        //     auto compute_func = [&] {
+        //         calc_zero_rank_func_border (u_buf);
+        //         calc_zero_rank_grid_border (u_buf);
+        //     };
 
-            std::thread compute_thread {compute_func};
-            std::thread bufferer_thread {bufferize_func};
+        //     auto bufferize_func = [&] {
+        //         receive_u_bufs (u_buf);
+        //     };
 
-            compute_thread.join ();
-            bufferer_thread.join ();
-        }
+        //     std::thread compute_thread {compute_func};
+        //     std::thread bufferer_thread {bufferize_func};
+
+        //     compute_thread.join ();
+        //     bufferer_thread.join ();
+        // }
 
         { volatile double tr = u_buf[3]; }
 
-        // print_2d_array (u_buf.data (), map_mgr.x_size, u_buf.size ());
+        print_2d_array (u_buf.data (), map_mgr.x_size, u_buf.size ());
     } else {
         calc_non_zero_rank_grid_border (rank);
     }
@@ -494,7 +497,7 @@ solve_trans_eq_parallel (const treq::trans_eq_task_t& task,
     MPI_Comm_rank (MPI_COMM_WORLD, &rank);
     MPI_Comm_size (MPI_COMM_WORLD, &num_threads);
 
-    int k_zone = 2;
+    int k_zone = 1;
 
     treq::trans_eq_solver solver {task, num_threads, k_zone};
     solver.solve (rank);
