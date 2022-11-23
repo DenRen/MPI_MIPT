@@ -5,7 +5,7 @@
 #include <random>
 #include <algorithm>
 
-void swap(int* lhs, int* rhs) noexcept
+void swap(int *lhs, int *rhs)
 {
     int tmp = *rhs;
     *rhs = *lhs;
@@ -13,7 +13,7 @@ void swap(int* lhs, int* rhs) noexcept
 }
 
 // [first, last]
-void Qsort(int* arr, int first, int last)
+void Qsort(int *arr, int first, int last)
 {
     if (first >= last)
         return;
@@ -22,53 +22,57 @@ void Qsort(int* arr, int first, int last)
     const int ref_elem = arr[ref_pos];
 
     int l = first, r = last;
-    do {
-        while (arr[l] < ref_elem) ++l;
-        while (arr[r] > ref_elem) --r;
+    do
+    {
+        while (arr[l] < ref_elem)
+            ++l;
+        while (arr[r] > ref_elem)
+            --r;
         if (l <= r)
             swap(arr + l++, arr + r--);
     } while (l <= r);
 
-    if (last - first >= 10'000)
-    {
-        #pragma omp parallel shared(arr) firstprivate(first, r, l, last)
-        {
-            #pragma omp single nowait
-            {
-                #pragma omp task
-                    Qsort(arr, first, r);
-                #pragma omp task
-                    Qsort(arr, l, last);
-            }
-        }
-    }
-    else
-    {
+    #pragma omp task shared(arr) if (last - first > 1000)
         Qsort(arr, first, r);
+
+    #pragma omp task shared(arr) if (last - first > 1000)
         Qsort(arr, l, last);
-    }
 }
+
+// #define RANDOM_ARRAY
+// #define STDIO_ARRAY
 
 // #define ENABLE_RES_CHECK
 
-int main()
+static int main_random_array()
 {
     const int size = 100'000;
+    const int num_repeats = 1000;
 
-    std::mt19937_64 mers{15+0*std::random_device{}()};
+#ifdef ENABLE_RES_CHECK
+    std::mt19937_64 mers{15 + 0 * std::random_device{}()};
     std::uniform_int_distribution<int> dist(0, 1000);
+#endif
 
+    omp_set_dynamic(0);
     std::vector<int> vec(size);
 
-    for (int i = 0; i < 1000; ++i)
+    double begin = omp_get_wtime();
+    for (int i_repeat = 0; i_repeat < num_repeats; ++i_repeat)
     {
     #ifdef ENABLE_RES_CHECK
-        for (auto& val : vec)
+        for (auto &val : vec)
             val = dist(mers);
 
         auto copy_vec = vec;
 
-        Qsort(copy_vec.data(), 0, copy_vec.size() - 1);
+        #pragma omp parallel
+        {
+            #pragma omp single
+            {
+                Qsort(copy_vec.data(), 0, copy_vec.size() - 1);
+            }
+        }
         std::sort(vec.begin(), vec.end());
 
         if (vec != copy_vec)
@@ -81,7 +85,65 @@ int main()
             return -1;
         }
     #else
-            Qsort(vec.data(), 0, vec.size() - 1);
+        #pragma omp parallel
+        {
+            #pragma omp single
+            {
+                Qsort(vec.data(), 0, vec.size() - 1);
+            }
+        }
     #endif
     }
+    double end = omp_get_wtime();
+    printf("time: %g\n", 1e3 * (end - begin) / num_repeats);
+
+    return 0;
+}
+
+// Format:
+// Input:  "5 9 8 7 6 5"
+// Output:   "5 6 7 8 9"
+static int main_stdio()
+{
+    int size = 0;
+    if (scanf("%d", &size) != 1)
+    {
+        perror("Incorrect size");
+        return -1;
+    }
+
+    std::vector<int> vec(size);
+    for (int i = 0; i < size; ++i)
+    {
+        if (scanf("%d", &vec[i]) != 1)
+        {
+            perror("Incorrect input data");
+            return -1;
+        }
+    }
+
+    #pragma omp parallel
+    {
+        #pragma omp single
+        {
+            Qsort(vec.data(), 0, vec.size() - 1);
+        }
+    }
+
+    for (const auto value : vec)
+        printf("%d ", value);
+
+    return 0;
+}
+
+int main()
+{
+#ifdef RANDOM_ARRAY
+    main_random_array();
+#endif
+
+#ifdef STDIO_ARRAY
+    main_stdio();
+#endif
+
 }
