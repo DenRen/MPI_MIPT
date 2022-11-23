@@ -36,3 +36,5 @@ labs/transport_equation/1
 labs/transport_equation/tmp.txt
 labs/transport_equation/tmp2.txt
 labs/transport_equation.zip
+OpenMPI/Tasks/8_QuickSort/.vscode/c_cpp_properties.json
+OpenMPI/Tasks/8_QuickSort/.vscode/settings.json
