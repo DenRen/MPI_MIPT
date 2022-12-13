@@ -120,7 +120,7 @@ void CalcParallel(std::size_t Y_size, int argc, char **argv)
     if (rank == 0)
     {
         const double dt_parallel = time_end - time_begin;
-        printf("par time: %lf\n", dt_parallel);
+        printf("%d %lf\n", num_threads, dt_parallel);
 
 #ifdef CHECK_CORRECT
         CheckOnCorrect<x_size>(Y_size, a);
